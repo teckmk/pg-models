@@ -1,0 +1,17 @@
+{
+  "name": "pgorm",
+  "version": "1.0.0",
+  "description": "ORM to use with your existing pg driver code",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "ORM",
+    "pg",
+    "postgreSQL",
+    "pgorm"
+  ],
+  "author": "Abdullah Yasir",
+  "license": "ISC"
+}
