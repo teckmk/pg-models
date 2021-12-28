@@ -1,5 +1,5 @@
 {
-  "name": "pgorm",
+  "name": "pg-models",
   "version": "1.0.0",
   "description": "ORM to use with your existing pg driver code",
   "main": "index.js",
@@ -10,7 +10,8 @@
     "ORM",
     "pg",
     "postgreSQL",
-    "pgorm"
+    "pgorm",
+    "pg-models"
   ],
   "author": "Abdullah Yasir",
   "license": "ISC"
