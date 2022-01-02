@@ -1,5 +1,5 @@
-const { PgormError } = require("./errors");
-const { getTimestamp, verifyParamType } = require("./util");
+const { PgormError } = require('./errors');
+const { getTimestamp, verifyParamType } = require('./util');
 
 /**
  * Represents PgormModel class
@@ -7,7 +7,6 @@ const { getTimestamp, verifyParamType } = require("./util");
  * const Users = new PgormModel('users');
  */
 class PgormModel {
-
   // private fields
   #selectQuery;
   #updateCols;
@@ -85,7 +84,9 @@ class PgormModel {
    */
   define(columns = {}, options = {}) {
     const columnValues = Object.keys(columns),
-      timestampsSchema = Object.values(this.timestamps).map((col) => `${col} TIMESTAMP`).join(),
+      timestampsSchema = Object.values(this.timestamps)
+        .map((col) => `${col} TIMESTAMP`)
+        .join(),
       tableColumnsSchema = [];
 
     this.columns = columns;
@@ -95,9 +96,13 @@ class PgormModel {
       ${Object.values(this.timestamps).join()} 
     FROM ${this.tableName}`;
 
-    this.#updateCols = columnValues.map((col, index) => `${col}=$${index + 1}`).join(',');
+    this.#updateCols = columnValues
+      .map((col, index) => `${col}=$${index + 1}`)
+      .join(',');
 
-    this.#columnsPlaceholders = columnValues.map((_, i) => '$' + (i + 1)).join();
+    this.#columnsPlaceholders = columnValues
+      .map((_, i) => '$' + (i + 1))
+      .join();
     this.#columnsLen = columnValues.length;
 
     // loop through columns get the name of every column
@@ -106,44 +111,55 @@ class PgormModel {
       tableColumnsSchema.push(value.schema);
     }
     // create table if it doesnt exists
-    PgormModel.#CLIENT.query(`CREATE TABLE IF NOT EXISTS ${this.tableName} (
+    PgormModel.#CLIENT
+      .query(
+        `CREATE TABLE IF NOT EXISTS ${this.tableName} (
     ${this.#pkName} SERIAL NOT NULL PRIMARY KEY,
     ${tableColumnsSchema.join()},
     ${timestampsSchema}
-    )`)
+    )`
+      )
       .then(() => {
         this.isTableCreated = true;
 
         // get all columns in the table
-        return PgormModel.#CLIENT.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='${this.tableSchema}' AND table_name='${this.tableName}'`);
-
+        return PgormModel.#CLIENT.query(
+          `SELECT column_name FROM information_schema.columns WHERE table_schema='${this.tableSchema}' AND table_name='${this.tableName}'`
+        );
       })
       .then(({ rows }) => {
         const tableColumnsNames = rows.map((col) => col.column_name);
         // check if any column is missing in the table
-        const missingColumns = Object.keys(this.columns).filter((col) => !tableColumnsNames.includes(col));
+        const missingColumns = Object.keys(this.columns).filter(
+          (col) => !tableColumnsNames.includes(col)
+        );
 
         // if any column is missing in the table
         if (missingColumns.length) {
           // add missing columns
-          const missingColumnsSchema = missingColumns.map((col) => `ADD COLUMN ${this.columns[col].schema}`).join();
+          const missingColumnsSchema = missingColumns
+            .map((col) => `ADD COLUMN ${this.columns[col].schema}`)
+            .join();
           PgormModel.#CLIENT.query(`ALTER TABLE ${this.tableName} 
           ${missingColumnsSchema}`);
         }
       })
       .catch((err) => {
-        console.log(err)
-        throw new PgormError(`Unable to define model for ${this.tableName}`, 'define');
+        console.log(err);
+        throw new PgormError(
+          `Unable to define model for ${this.tableName}`,
+          'define'
+        );
       });
-
-
   }
   // validator function (colValue, colName, inputObj)
   validate(values = {}) {
     // loop through all columns of this model
     for (const key in this.columns) {
       // run all validator functions against user input
-      this.columns[key]?.validations?.forEach((fn) => fn?.(values[key], key, values));
+      this.columns[key]?.validations?.forEach((fn) =>
+        fn?.(values[key], key, values)
+      );
     }
   }
 
@@ -211,7 +227,6 @@ class PgormModel {
     this.customQueries[methodName] = fn(Model.#CLIENT);
   }
 
-
   /**
    * Creates a foreign key
    * @param {String} fkName Name of the foreign key
@@ -221,46 +236,71 @@ class PgormModel {
    */
   addForeignKey(fkName, parentTableName) {
     verifyParamType(fkName, 'string', 'fkName', 'addForeignKey');
-    verifyParamType(parentTableName, 'string', 'parentTableName', 'addForeignKey');
+    verifyParamType(
+      parentTableName,
+      'string',
+      'parentTableName',
+      'addForeignKey'
+    );
 
     const thisMethodName = 'addForeignKey',
       contraintName = `${this.tableName}_${fkName}_fkey`;
 
     // check if fkName column exists
-    const { rows: columns } = PgormModel.#CLIENT.query(`SELECT EXISTS (SELECT 1 
+    const { rows: columns } = PgormModel.#CLIENT
+      .query(
+        `SELECT EXISTS (SELECT 1 
       FROM information_schema.columns 
-      WHERE table_schema='${this.tableSchema}' AND table_name='${this.tableName}' AND column_name='${fkName}');`)
-      .then(() => { })
+      WHERE table_schema='${this.tableSchema}' AND table_name='${this.tableName}' AND column_name='${fkName}');`
+      )
+      .then(() => {})
       .catch((err) => {
-        throw new PgormError(`Unable to check if column ${fkName} exists`, thisMethodName)
+        throw new PgormError(
+          `Unable to check if column ${fkName} exists`,
+          thisMethodName
+        );
       });
 
     // check if constraint exists already
-    const { rows: contraints } = PgormModel.#CLIENT.query(`SELECT EXISTS (SELECT 1 
+    const { rows: contraints } = PgormModel.#CLIENT
+      .query(
+        `SELECT EXISTS (SELECT 1 
       FROM information_schema.table_constraints 
-      WHERE table_schema='${this.tableSchema}' AND table_name='${this.tableName}' AND constraint_name='${contraintName}');`)
-      .then(() => { })
+      WHERE table_schema='${this.tableSchema}' AND table_name='${this.tableName}' AND constraint_name='${contraintName}');`
+      )
+      .then(() => {})
       .catch((err) => {
-        throw new PgormError(`Unable to verify ${fkName} contraint`, thisMethodName)
+        throw new PgormError(
+          `Unable to verify ${fkName} contraint`,
+          thisMethodName
+        );
       });
 
     if (!columns[0].exists) {
-      throw new PgormError(`column ${fkName} in addForeignKey does not exist`, thisMethodName)
+      throw new PgormError(
+        `column ${fkName} in addForeignKey does not exist`,
+        thisMethodName
+      );
     }
 
     // if foreign key doesnt exist already
     if (!contraints[0].exists) {
       // reference foreign key
-      PgormModel.#CLIENT.query(` ALTER TABLE ${this.tableName}
+      PgormModel.#CLIENT
+        .query(
+          ` ALTER TABLE ${this.tableName}
         ADD CONSTRAINT ${contraintName}
         FOREIGN KEY (${fkName})
-        REFERENCES "${parentTableName}" (${this.#pkName});`)
-        .then(() => { })
+        REFERENCES "${parentTableName}" (${this.#pkName});`
+        )
+        .then(() => {})
         .catch((err) => {
-          throw new PgormError(`Unable to add ${fkName} foreign key`, thisMethodName)
+          throw new PgormError(
+            `Unable to add ${fkName} foreign key`,
+            thisMethodName
+          );
         });
     }
-
   }
 
   /**
@@ -287,10 +327,12 @@ class PgormModel {
     verifyParamType(whereClause, 'string', 'whereClause', 'findAllWhere');
     verifyParamType(paramsArray, 'object', 'paramsArray', 'findAllWhere');
 
-    const { rows } = await PgormModel.#CLIENT.query(`${this.#selectQuery} ${whereClause}`, paramsArray);
+    const { rows } = await PgormModel.#CLIENT.query(
+      `${this.#selectQuery} ${whereClause}`,
+      paramsArray
+    );
     return rows;
   }
-
 
   /**
    * Gets the one matching result
@@ -303,9 +345,13 @@ class PgormModel {
   async findOne(column, value) {
     verifyParamType(column, 'string', 'column', 'findOne');
     // check if column is in this.columns;
-    if (!this.columns[column]) throw new PgormError('Invalid column name', 'findOne');
+    if (!this.columns[column])
+      throw new PgormError('Invalid column name', 'findOne');
 
-    const { rows } = await PgormModel.#CLIENT.query(`${this.#selectQuery} where ${column}=$1`, [value]);
+    const { rows } = await PgormModel.#CLIENT.query(
+      `${this.#selectQuery} where ${column}=$1`,
+      [value]
+    );
     return rows[0] || null;
   }
 
@@ -317,7 +363,10 @@ class PgormModel {
    * const user = await Users.findById(12);
    */
   async findById(id) {
-    const { rows } = await PgormModel.#CLIENT.query(`${this.#selectQuery} where ${this.#pkName}=$1`, [id]);
+    const { rows } = await PgormModel.#CLIENT.query(
+      `${this.#selectQuery} where ${this.#pkName}=$1`,
+      [id]
+    );
     return rows[0] || null;
   }
 
@@ -328,7 +377,7 @@ class PgormModel {
    * @returns Updated record or null
    * @example
    * const updatedUser = await Users.updateById(12,{fullname: 'Ali Hussain', age: 23});
-   * 
+   *
    * if(updatedUsers){
    *    // user updated...
    * } else {
@@ -339,14 +388,17 @@ class PgormModel {
     this.validate(values);
     await this.#validateBeforeUpdate?.(Model.#CLIENT);
 
-    const
-      len = this.#columnsLen,
+    const len = this.#columnsLen,
       arrangedValues = this.#arrangeByColumns(values),
       updateQuery = `UPDATE ${this.tableName} 
         set ${this.#updateCols}, ${this.timestamps.updatedAt}=$${len + 1}
         where ${this.#pkName}=$${len + 2} RETURNING ${this.#pkName}`;
 
-    const { rows } = await PgormModel.#CLIENT.query(updateQuery, [...arrangedValues, getTimestamp(), id]);
+    const { rows } = await PgormModel.#CLIENT.query(updateQuery, [
+      ...arrangedValues,
+      getTimestamp(),
+      id,
+    ]);
 
     return rows[0] || null;
   }
@@ -359,20 +411,27 @@ class PgormModel {
    * const user = await Users.create({fullname: 'Huzaifa Tayyab', age: 23});
    */
   async create(values) {
-
     this.validate(values); // user input validations
     await this.#validateBeforeCreate?.(Model.#CLIENT, values); //record validations
 
     const len = this.#columnsLen,
       arrangedValues = this.#arrangeByColumns(values),
       timestamp = getTimestamp(),
-      insertQuery = `INSERT INTO ${this.tableName} (${Object.keys(this.columns).join()},${this.timestamps.updatedAt}, ${this.timestamps.createdAt}) VALUES (${this.#columnsPlaceholders}, $${len + 1}, $${len + 2}) RETURNING *`;
+      insertQuery = `INSERT INTO ${this.tableName} (${Object.keys(
+        this.columns
+      ).join()},${this.timestamps.updatedAt}, ${
+        this.timestamps.createdAt
+      }) VALUES (${this.#columnsPlaceholders}, $${len + 1}, $${
+        len + 2
+      }) RETURNING *`;
 
-    const { rows } = await PgormModel.#CLIENT.query(insertQuery,
-      [...arrangedValues, timestamp, timestamp]
-    );
+    const { rows } = await PgormModel.#CLIENT.query(insertQuery, [
+      ...arrangedValues,
+      timestamp,
+      timestamp,
+    ]);
 
-    return rows[0] || null
+    return rows[0] || null;
   }
 
   /**
@@ -381,7 +440,7 @@ class PgormModel {
    * @returns true
    * @example
    * const isUserDeleted = await Users.deleteById(12);
-   * 
+   *
    * if(isUserDeleted){
    *    // deleted
    * } else {
@@ -391,19 +450,28 @@ class PgormModel {
   async deleteById(id) {
     await this.#validateBeforeDestroy?.(Model.#CLIENT);
     if (this.paranoid) {
-      await PgormModel.#CLIENT.query(`UPDATE ${this.tableName} SET ${this.flags.isDeleted}=$1 WHERE ${this.#pkName}=$2`, [true, id]);
+      await PgormModel.#CLIENT.query(
+        `UPDATE ${this.tableName} SET ${this.flags.isDeleted}=$1 WHERE ${
+          this.#pkName
+        }=$2`,
+        [true, id]
+      );
       return true;
     } else {
-      await PgormModel.#CLIENT.query(`DELETE FROM ${this.tableName} WHERE ${this.#pkName}=$1`, [id]);
+      await PgormModel.#CLIENT.query(
+        `DELETE FROM ${this.tableName} WHERE ${this.#pkName}=$1`,
+        [id]
+      );
       return true;
     }
-
   }
 }
 
 // static values
-Model.prototype.timestamps = { createdAt: 'created_at', updatedAt: 'updated_at' };
-Model.prototype.flags = { isDeleted: 'is_deleted' };
-
+PgormModel.prototype.timestamps = {
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+};
+PgormModel.prototype.flags = { isDeleted: 'is_deleted' };
 
 module.exports = PgormModel;
