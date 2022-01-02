@@ -365,6 +365,8 @@ class PgormModel {
    * const user = await Users.findById(12);
    */
   async findById(id) {
+    verifyParamType(id, 'number', 'id', 'findById');
+
     const { rows } = await PgormModel.#CLIENT.query(
       `${this.#selectQuery} where ${this.#pkName}=$1`,
       [id]
@@ -387,6 +389,8 @@ class PgormModel {
    * }
    */
   async updateById(id, values) {
+    verifyParamType(id, 'number', 'id', 'updateById');
+
     this.validate(values);
     await this.#validateBeforeUpdate?.(Model.#CLIENT);
 
@@ -413,6 +417,8 @@ class PgormModel {
    * const user = await Users.create({fullname: 'Huzaifa Tayyab', age: 23});
    */
   async create(values) {
+    verifyParamType(values, 'object', 'values', 'create');
+
     this.validate(values); // user input validations
     await this.#validateBeforeCreate?.(Model.#CLIENT, values); //record validations
 
@@ -450,6 +456,8 @@ class PgormModel {
    * }
    */
   async deleteById(id) {
+    verifyParamType(id, 'number', 'id', 'deleteById');
+
     await this.#validateBeforeDestroy?.(Model.#CLIENT);
     if (this.paranoid) {
       await PgormModel.#CLIENT.query(
