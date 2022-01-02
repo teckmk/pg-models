@@ -20,6 +20,8 @@ class PgormModel {
 
   // private methods
   #arrangeByColumns(valuesObj) {
+    verifyParamType(valuesObj, 'object', 'valuesObj', 'arrangeByColumns');
+
     const arr = [];
     for (const key in this.columns) {
       if (Object.hasOwnProperty.call(this.columns, key)) {
