@@ -1,6 +1,6 @@
 {
   "name": "pg-models",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "ORM to use with your existing pg driver code",
   "main": "index.js",
   "scripts": {
