@@ -169,7 +169,7 @@ class PgormModel {
    * Registers a validator function, validator function can throw error on validation failure
    * @param {Function} fn A function to run before PgormModel.create(..) operation
    * @example
-   * Users.beforeCreate(async (client)=>{
+   * Users.beforeCreate(async (client, values)=>{
    *   // await client.query(..)
    *   // throws error on validation failure
    * })
@@ -183,7 +183,7 @@ class PgormModel {
    * Registers a validator function
    * @param {Function} fn A function to run before PgormModel.update(..) operation
    * @example
-   * Users.beforeUpdate(async (client)=>{
+   * Users.beforeUpdate(async (client, recordId)=>{
    *   // await client.query(..)
    *   // throws error on validation failure
    * })
@@ -197,7 +197,7 @@ class PgormModel {
    * Registers a validator function
    * @param {Function} fn A function to run before PgormModel.destory(..) operation
    * @example
-   * Users.beforeDestroy(async (client)=>{
+   * Users.beforeDestroy(async (client, recordId)=>{
    *   // await client.query(..)
    *   // throws error on validation failure
    * })
@@ -392,7 +392,7 @@ class PgormModel {
     verifyParamType(id, 'number', 'id', 'updateById');
 
     this.validate(values);
-    await this.#validateBeforeUpdate?.(Model.#CLIENT);
+    await this.#validateBeforeUpdate?.(Model.#CLIENT, values);
 
     const len = this.#columnsLen,
       arrangedValues = this.#arrangeByColumns(values),
@@ -458,8 +458,10 @@ class PgormModel {
   async deleteById(id) {
     verifyParamType(id, 'number', 'id', 'deleteById');
 
-    await this.#validateBeforeDestroy?.(Model.#CLIENT);
+    await this.#validateBeforeDestroy?.(Model.#CLIENT, id);
+
     if (this.paranoid) {
+      // if paranoid, do soft delete, put deleted=true
       await PgormModel.#CLIENT.query(
         `UPDATE ${this.tableName} SET ${this.flags.isDeleted}=$1 WHERE ${
           this.#pkName
@@ -468,6 +470,7 @@ class PgormModel {
       );
       return true;
     } else {
+      // else do hard delete
       await PgormModel.#CLIENT.query(
         `DELETE FROM ${this.tableName} WHERE ${this.#pkName}=$1`,
         [id]
