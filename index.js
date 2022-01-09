@@ -226,7 +226,7 @@ class PgormModel {
     verifyParamType(methodName, 'string', 'methodName', 'addQueryMethod');
     verifyParamType(fn, 'function', 'fn', 'addQueryMethod');
 
-    this.customQueries[methodName] = fn(Model.#CLIENT);
+    this.customQueries[methodName] = fn(PgormModel.#CLIENT);
   }
 
   /**
@@ -392,7 +392,7 @@ class PgormModel {
     verifyParamType(id, 'number', 'id', 'updateById');
 
     this.validate(values);
-    await this.#validateBeforeUpdate?.(Model.#CLIENT, values);
+    await this.#validateBeforeUpdate?.(PgormModel.#CLIENT, values);
 
     const len = this.#columnsLen,
       arrangedValues = this.#arrangeByColumns(values),
@@ -420,7 +420,7 @@ class PgormModel {
     verifyParamType(values, 'object', 'values', 'create');
 
     this.validate(values); // user input validations
-    await this.#validateBeforeCreate?.(Model.#CLIENT, values); //record validations
+    await this.#validateBeforeCreate?.(PgormModel.#CLIENT, values); //record validations
 
     const len = this.#columnsLen,
       arrangedValues = this.#arrangeByColumns(values),
@@ -458,7 +458,7 @@ class PgormModel {
   async deleteById(id) {
     verifyParamType(id, 'number', 'id', 'deleteById');
 
-    await this.#validateBeforeDestroy?.(Model.#CLIENT, id);
+    await this.#validateBeforeDestroy?.(PgormModel.#CLIENT, id);
 
     if (this.paranoid) {
       // if paranoid, do soft delete, put deleted=true
