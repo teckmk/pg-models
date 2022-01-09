@@ -48,7 +48,7 @@ class PgormModel {
    * @static
    * @param {PG_Client} dbConnection The pg client object
    * @example
-   * PgormModel.use(pgClient);
+   * PgormModel.useConnection(pgClient);
    */
   static useConnection(dbConnection) {
     PgormModel.#CLIENT = dbConnection;
