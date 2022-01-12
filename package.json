@@ -1,18 +1,24 @@
 {
   "name": "pg-models",
   "version": "1.0.5",
-  "description": "ORM to use with your existing pg driver code",
+  "description": "ORM to use with your existing pg driver code. Write new code using ORM essentials and make it work with existing code without modifying it.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "docs": "doxdox 'index.js' --layout markdown --output README.md",
+    "publish-patch": "npm run docs && git add . && git commit -m 'docs: update' && git push && npm version patch && npm publish"
   },
   "keywords": [
     "ORM",
     "pg",
     "postgreSQL",
     "pgorm",
-    "pg-models"
+    "pg-models",
+    "pg-orm",
+    "SQL",
+    "models",
+    "pg-orm-models"
   ],
   "author": "Abdullah Yasir",
+  "displayName": "Pgorm Models",
   "license": "ISC"
 }

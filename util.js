@@ -1,4 +1,4 @@
-const { PgormError } = require("./errors");
+const { PgormError } = require('./errors');
 
 const typeErrors = {
   string: 'Must be a string',
@@ -7,38 +7,26 @@ const typeErrors = {
   object: 'Must be a object',
   boolean: 'Must be a boolean',
   array: 'Must be a array',
-}
-
-module.exports.catchAsync = (fn) => (...args) => {
-  if (typeof fn === '')
-    try {
-      fn(...args)
-    } catch (err) {
-      console.log(err.message);
-      console.log(err)
-    }
-  }
-
+};
 
 module.exports.getTimestamp = () =>
-  new Date().toISOString().slice(0, 19).replace("T", " ");
+  new Date().toISOString().slice(0, 19).replace('T', ' ');
 
 module.exports.isArray = (param) => {
   if (typeof param === 'object' && param.length) return true;
   return false;
-}
+};
 
 module.exports.verifyParamType = (paramVal, type, paramName, methodName) => {
-  if (typeof paramVal !== type) throw new PgormError(`'${paramName}' ${typeErrors[type]}`, methodName)
-}
+  if (typeof paramVal !== type)
+    throw new PgormError(`'${paramName}' ${typeErrors[type]}`, methodName);
+};
 
-module.exports.verifyParams = (paramsObj, methodName) => {
-  if (paramsObj.length) {
-    // array is provided
-    for ([key, value] of Object.entries(paramsObj)) {
-
-    }
-  } else {
-
-  }
-}
+// module.exports.verifyParams = (paramsObj, methodName) => {
+//   if (paramsObj.length) {
+//     // array is provided
+//     for ([key, value] of Object.entries(paramsObj)) {
+//     }
+//   } else {
+//   }
+// };

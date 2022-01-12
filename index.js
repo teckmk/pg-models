@@ -2,6 +2,11 @@ const { PgormError } = require('./errors');
 const { getTimestamp, verifyParamType } = require('./util');
 
 /**
+ * @Usage:
+ * const PgormModel = require('pg-models');
+ */
+
+/**
  * Represents PgormModel class
  * @example
  * const Users = new PgormModel('users');
@@ -46,7 +51,7 @@ class PgormModel {
 
   /**
    * @static
-   * @param {PG_Client} dbConnection The pg client object
+   * @param {PG_Client} dbConnection The pg client object returned by pg.connect()
    * @example
    * PgormModel.useConnection(pgClient);
    */
@@ -55,7 +60,7 @@ class PgormModel {
   }
 
   /**
-   * Creates new table for the model with given configurations
+   * Creates new table for the model with given configurations. Alters the table if already exists according to the given configurations.
    * @param {Object} columns Table columns with configurations
    * @param {Object} options Options to modify the behaviour of PgormModel
    * @example
@@ -166,7 +171,8 @@ class PgormModel {
   }
 
   /**
-   * Registers a validator function, validator function can throw error on validation failure
+   * Registers a validator hook, which is called before every 'create' operation on this model.
+   * Validator function must throw error on validation failure.
    * @param {Function} fn A function to run before PgormModel.create(..) operation
    * @example
    * Users.beforeCreate(async (client, values)=>{
@@ -180,7 +186,8 @@ class PgormModel {
   }
 
   /**
-   * Registers a validator function
+   * Registers a validator hook, which is called before every 'update' operation on this model.
+   * Validator function must throw error on validation failure.
    * @param {Function} fn A function to run before PgormModel.update(..) operation
    * @example
    * Users.beforeUpdate(async (client, recordId)=>{
@@ -194,7 +201,8 @@ class PgormModel {
   }
 
   /**
-   * Registers a validator function
+   * Registers a validator hook, which is called before every 'delete' operation on this model.
+   * Validator function must throw error on validation failure.
    * @param {Function} fn A function to run before PgormModel.destory(..) operation
    * @example
    * Users.beforeDestroy(async (client, recordId)=>{
@@ -230,11 +238,12 @@ class PgormModel {
   }
 
   /**
-   * Creates a foreign key
-   * @param {String} fkName Name of the foreign key
+   * Creates a foreign key.
+   * Throws error if the foreign key already exists or column is not defined in parent model.
+   * @param {String} fkName Name of the foreign key, fKName must be present in the parent model
    * @param {String} parentTableName The name of the parent table to which key is being linked
    * @example
-   * Users.addForeignKey('qualification_id', 'qualifications');
+   * Users.addForeignKey('qualification_id', Qualifications.tableName);
    */
   addForeignKey(fkName, parentTableName) {
     verifyParamType(fkName, 'string', 'fkName', 'addForeignKey');
@@ -248,61 +257,45 @@ class PgormModel {
     const thisMethodName = 'addForeignKey',
       contraintName = `${this.tableName}_${fkName}_fkey`;
 
-    // check if fkName column exists
-    const { rows: columns } = PgormModel.#CLIENT
-      .query(
-        `SELECT EXISTS (SELECT 1 
+    (async () => {
+      try {
+        // check if fkName column exists
+        const { rows: columns } = await PgormModel.#CLIENT.query(
+          `SELECT EXISTS (SELECT 1 
       FROM information_schema.columns 
       WHERE table_schema='${this.tableSchema}' AND table_name='${this.tableName}' AND column_name='${fkName}');`
-      )
-      .then(() => {})
-      .catch((err) => {
-        throw new PgormError(
-          `Unable to check if column ${fkName} exists`,
-          thisMethodName
         );
-      });
+        if (!columns[0].exists) {
+          throw new PgormError(
+            `column ${fkName} in addForeignKey does not exist`,
+            thisMethodName
+          );
+        }
 
-    // check if constraint exists already
-    const { rows: contraints } = PgormModel.#CLIENT
-      .query(
-        `SELECT EXISTS (SELECT 1 
+        // check if constraint exists already
+        const { rows: constraints } = await PgormModel.#CLIENT.query(
+          `SELECT EXISTS (SELECT 1 
       FROM information_schema.table_constraints 
       WHERE table_schema='${this.tableSchema}' AND table_name='${this.tableName}' AND constraint_name='${contraintName}');`
-      )
-      .then(() => {})
-      .catch((err) => {
-        throw new PgormError(
-          `Unable to verify ${fkName} contraint`,
-          thisMethodName
         );
-      });
 
-    if (!columns[0].exists) {
-      throw new PgormError(
-        `column ${fkName} in addForeignKey does not exist`,
-        thisMethodName
-      );
-    }
-
-    // if foreign key doesnt exist already
-    if (!contraints[0].exists) {
-      // reference foreign key
-      PgormModel.#CLIENT
-        .query(
-          ` ALTER TABLE ${this.tableName}
+        // if foreign key doesnt exist already
+        if (!constraints[0].exists) {
+          // reference foreign key
+          await PgormModel.#CLIENT.query(
+            `ALTER TABLE ${this.tableName}
         ADD CONSTRAINT ${contraintName}
         FOREIGN KEY (${fkName})
         REFERENCES "${parentTableName}" (${this.#pkName});`
-        )
-        .then(() => {})
-        .catch((err) => {
-          throw new PgormError(
-            `Unable to add ${fkName} foreign key`,
-            thisMethodName
           );
-        });
-    }
+        }
+      } catch (err) {
+        throw new PgormError(
+          `Unable to create foreign key ${contraintName}: ${err.message}`,
+          thisMethodName
+        );
+      }
+    })();
   }
 
   /**
@@ -318,7 +311,7 @@ class PgormModel {
   }
 
   /**
-   * Gets all the results in the model matching whereClause
+   * Gets all the results in the model, matching whereClause
    * @param {String} whereClause SQL query starting with 'WHERE'
    * @param {Array} paramsArray Array of values for the query placeholders
    * @returns Array of results or an emtpy array
@@ -358,7 +351,8 @@ class PgormModel {
   }
 
   /**
-   * Gets the result against the given id
+   * Gets the result from the model against the given id.
+   * Return null if no result found.
    * @param {Number} id Id of the result
    * @returns Object or null
    * @example
