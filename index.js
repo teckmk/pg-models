@@ -2,12 +2,9 @@ const { PgormError } = require('./errors');
 const { getTimestamp, verifyParamType } = require('./util');
 
 /**
- * @Usage:
- * const PgormModel = require('pg-models');
- */
-
-/**
  * Represents PgormModel class
+ * @usage
+ * const PgormModel = require('pg-models');
  * @example
  * const Users = new PgormModel('users');
  */
@@ -218,9 +215,10 @@ class PgormModel {
   /**
    * Creates new function on the model
    * @param {String} methodName The name for the function
-   * @param {Function} fn A function to add
+   * @param {Function} fn A callback which returns a query function to attach to the model,
    * @example
    * Users.addQueryMethod('getByQualification', (client)=>{
+   *   // here you define and return your query function
    *   return async (qual_id) => {
    *     // const { rows: usersByQual } = await client.query(..)
    *     // return usersByQual
@@ -228,7 +226,7 @@ class PgormModel {
    * });
    *
    * // in users controller
-   * await Users.getByQualification(1)
+   * await Users.customQueries.getByQualification(1)
    */
   addQueryMethod(methodName, fn) {
     verifyParamType(methodName, 'string', 'methodName', 'addQueryMethod');

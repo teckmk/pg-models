@@ -63,7 +63,7 @@ const Users = new PgormModel('users');
 
 | Name | Type | Description |  |
 | ---- | ---- | ----------- | -------- |
-| dbConnection | `PG_Client`  | The pg client object | &nbsp; |
+| dbConnection | `PG_Client`  | The pg client object returned by pg.connect() | &nbsp; |
 
 
 
@@ -84,7 +84,7 @@ PgormModel.useConnection(pgClient);
 
 #### PgormModel.define(columns, options) 
 
-Creates new table for the model with given configurations
+Creates new table for the model with given configurations. Alters the table if already exists according to the given configurations.
 
 
 
@@ -138,7 +138,8 @@ Users.define({
 
 #### PgormModel.beforeCreate(fn) 
 
-Registers a validator function, validator function can throw error on validation failure
+Registers a validator hook, which is called before every 'create' operation on this model.
+Validator function must throw error on validation failure.
 
 
 
@@ -171,7 +172,8 @@ Users.beforeCreate(async (client, values)=>{
 
 #### PgormModel.beforeUpdate(fn) 
 
-Registers a validator function
+Registers a validator hook, which is called before every 'update' operation on this model.
+Validator function must throw error on validation failure.
 
 
 
@@ -204,7 +206,8 @@ Users.beforeUpdate(async (client, recordId)=>{
 
 #### PgormModel.beforeDestroy(fn) 
 
-Registers a validator function
+Registers a validator hook, which is called before every 'delete' operation on this model.
+Validator function must throw error on validation failure.
 
 
 
@@ -277,7 +280,7 @@ await Users.getByQualification(1)
 #### PgormModel.addForeignKey(fkName, parentTableName) 
 
 Creates a foreign key.
-Throws error if the foreign key already exists or column is not defined.
+Throws error if the foreign key already exists or column is not defined in parent model.
 
 
 
@@ -286,7 +289,7 @@ Throws error if the foreign key already exists or column is not defined.
 
 | Name | Type | Description |  |
 | ---- | ---- | ----------- | -------- |
-| fkName | `String`  | Name of the foreign key, fKeyName must be present in the parent model | &nbsp; |
+| fkName | `String`  | Name of the foreign key, fKName must be present in the parent model | &nbsp; |
 | parentTableName | `String`  | The name of the parent table to which key is being linked | &nbsp; |
 
 
