@@ -250,7 +250,7 @@ Creates new function on the model
 | Name | Type | Description |  |
 | ---- | ---- | ----------- | -------- |
 | methodName | `String`  | The name for the function | &nbsp; |
-| fn | `Function`  | A function to add | &nbsp; |
+| fn | `Function`  | A callback which returns a query function to attach to the model, | &nbsp; |
 
 
 
@@ -259,6 +259,7 @@ Creates new function on the model
 
 ```javascript
 Users.addQueryMethod('getByQualification', (client)=>{
+  // here you define and return your query function
   return async (qual_id) => {
     // const { rows: usersByQual } = await client.query(..)
     // return usersByQual
@@ -266,7 +267,7 @@ Users.addQueryMethod('getByQualification', (client)=>{
 });
 
 // in users controller
-await Users.getByQualification(1)
+await Users.customQueries.getByQualification(1)
 ```
 
 
