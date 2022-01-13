@@ -2,8 +2,10 @@ const { PgormError } = require('./errors');
 const { getTimestamp, verifyParamType } = require('./util');
 
 /**
- * Represents PgormModel class
- * @usage
+ * @class PgormModel
+ * @summary
+ * Installation: npm install pg-models
+ * @example
  * const PgormModel = require('pg-models');
  * @example
  * const Users = new PgormModel('users');
@@ -213,7 +215,8 @@ class PgormModel {
   }
 
   /**
-   * Creates new function on the model
+   * Creates new function on the model, that can be accessed by the model instance.
+   * i.e `MyModel.customQueries.myCustomQueryMethod(..)`
    * @param {String} methodName The name for the function
    * @param {Function} fn A callback which returns a query function to attach to the model,
    * @example
@@ -241,7 +244,17 @@ class PgormModel {
    * @param {String} fkName Name of the foreign key, fKName must be present in the parent model
    * @param {String} parentTableName The name of the parent table to which key is being linked
    * @example
-   * Users.addForeignKey('qualification_id', Qualifications.tableName);
+   * const Books = new PgormModel('books', {
+   *   title: {
+   *      schema: 'title VARCHAR(255)',
+   *   },
+   *   user_id: {
+   *      schema: 'user_id INT',
+   *   },
+   * });
+   *
+   * // create a foreign key on user_id column
+   * Books.addForeignKey('user_id', Users.tableName);
    */
   addForeignKey(fkName, parentTableName) {
     verifyParamType(fkName, 'string', 'fkName', 'addForeignKey');
