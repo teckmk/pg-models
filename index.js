@@ -68,7 +68,7 @@ class PgormModel {
   #tablePrefix;
   #tableSchema;
   #alterTable;
-  #useTimestamps = false;
+  #useTimestamps;
   #paranoidTable;
   #enableErrorLogs;
 
@@ -96,9 +96,20 @@ class PgormModel {
     let deleteCheck = '';
     // if modal is paranoid, check if record was not deleted
     if (this.#paranoidTable) {
-      deleteCheck = `${startWith} ${this.timestamps.deletedAt}=null`;
+      deleteCheck = `${startWith} ${PgormModel.timestamps.deletedAt}=null`;
     }
     return deleteCheck;
+  }
+
+  // function which runs all validator functions of all columns
+  #validate(values = {}) {
+    // loop through all columns of this model
+    for (const key in this.columns) {
+      // run all validator functions against user input
+      this.columns[key]?.validations?.forEach((fn) =>
+        fn?.(values[key], key, values)
+      );
+    }
   }
 
   /**
@@ -123,8 +134,14 @@ class PgormModel {
     // since v1.0.7
     // if options.timestamps = bool
     if (typeof options.timestamps === 'boolean') {
-      this.#useTimestamps = options.timestamps;
-    } else if (typeof options.timestamps === 'object') {
+      this.#useTimestamps = options.timestamps; // enable/disable timestamps
+    }
+    // if options.timestamps = object. dev want to rename timestamps
+    else if (typeof options.timestamps === 'object') {
+      //1- enable timestamps
+      this.#useTimestamps = true;
+
+      //2- then overwrite crr values with provided vals
       PgormModel.timestamps = {
         ...PgormModel.timestamps,
         ...options.timestamps,
@@ -144,6 +161,9 @@ class PgormModel {
     PgormModel.models[modelName] = this; // add reference of this instance in models static var
   }
 
+  /**
+   * gets or sets the table name (with prefix)
+   */
   set tableName(tableName) {
     this.#tableName = this.#tablePrefix + tableName;
   }
@@ -193,40 +213,58 @@ class PgormModel {
    * });
    */
   define(columns = {}) {
-    const columnValues = Object.keys(columns); // get all column names
-    const timestampsSchema = Object.values(this.timestamps)
-      .map((col) => `${col} TIMESTAMP`)
-      .join(); // get timestamps names
     const tableColumnsSchema = [];
+    const columnValues = Object.keys(columns); // get all column names
 
-    this.columns = columns;
-    this.#selectQuery = `SELECT 
-      ${this.#pkName},
-      ${columnValues.join()},
-      ${Object.values(this.timestamps).join()} 
-    FROM ${this.tableName}`;
+    // get timestamps names and generate schema
+    const timestampsSchema = Object.values(PgormModel.timestamps)
+      .map((col) => `${col} TIMESTAMP`)
+      .join();
 
+    this.columns = columns; // set columns to be accessibe in the class
+
+    // columns for select query
+    let selectColumns = `${this.#pkName},${columnValues.join()}`;
+
+    // include timestamps columns if enabled
+    if (this.#useTimestamps) {
+      selectColumns += `,${Object.values(PgormModel.timestamps).join()}`;
+    }
+
+    // select query string
+    this.#selectQuery = `SELECT ${selectColumns} FROM ${this.tableName}`;
+
+    // prepare update cols string with placeholers i.e col=$1, col2=$2...
     this.#updateCols = columnValues
       .map((col, index) => `${col}=$${index + 1}`)
       .join(',');
 
+    // prepare cols string for create query
     this.#columnsPlaceholders = columnValues
       .map((_, i) => '$' + (i + 1))
       .join();
+
+    // calculate columns length so that it can be used in the class
     this.#columnsLen = columnValues.length;
 
     // loop through columns get the schema of every column
     for (const [key, value] of Object.entries(columns)) {
       tableColumnsSchema.push(value.schema);
     }
+
+    // columns schema for the create table query
+    let createTableCols = `${this.#pkName} SERIAL NOT NULL PRIMARY KEY,
+    ${tableColumnsSchema.join()}`;
+
+    // if timestamps are enabled, add timestamps as table columns
+    if (this.#useTimestamps) {
+      createTableCols += `,${timestampsSchema}`;
+    }
+
     // create table if it doesnt exists
     PgormModel.#CLIENT
       .query(
-        `CREATE TABLE IF NOT EXISTS ${this.tableName} (
-    ${this.#pkName} SERIAL NOT NULL PRIMARY KEY,
-    ${tableColumnsSchema.join()},
-    ${timestampsSchema}
-    )`
+        `CREATE TABLE IF NOT EXISTS ${this.tableName} (${createTableCols})`
       )
       .then(() => {
         this.isTableCreated = true;
@@ -267,16 +305,6 @@ class PgormModel {
           'define'
         );
       });
-  }
-  // validator function (colValue, colName, inputObj)
-  validate(values = {}) {
-    // loop through all columns of this model
-    for (const key in this.columns) {
-      // run all validator functions against user input
-      this.columns[key]?.validations?.forEach((fn) =>
-        fn?.(values[key], key, values)
-      );
-    }
   }
 
   /**
@@ -511,13 +539,13 @@ class PgormModel {
   async updateById(id, values) {
     verifyParamType(id, 'number', 'id', 'updateById');
 
-    this.validate(values);
+    this.#validate(values);
     await this.#validateBeforeUpdate?.(PgormModel.#CLIENT, values);
 
     const len = this.#columnsLen,
       arrangedValues = this.#arrangeByColumns(values),
       updateQuery = `UPDATE ${this.tableName} 
-        set ${this.#updateCols}, ${this.timestamps.updatedAt}=$${len + 1}
+        set ${this.#updateCols}, ${PgormModel.timestamps.updatedAt}=$${len + 1}
         where ${this.#pkName}=$${len + 2} RETURNING ${this.#pkName}`;
 
     const { rows } = await PgormModel.#CLIENT.query(updateQuery, [
@@ -539,24 +567,32 @@ class PgormModel {
   async create(values) {
     verifyParamType(values, 'object', 'values', 'create');
 
-    this.validate(values); // user input validations
+    this.#validate(values); // user input validations
     await this.#validateBeforeCreate?.(PgormModel.#CLIENT, values); //record validations
 
-    const len = this.#columnsLen,
-      arrangedValues = this.#arrangeByColumns(values),
-      timestamp = getTimestamp(),
-      insertQuery = `INSERT INTO ${this.tableName} (${Object.keys(
-        this.columns
-      ).join()},${this.timestamps.updatedAt}, ${
-        this.timestamps.createdAt
-      }) VALUES (${this.#columnsPlaceholders}, $${len + 1}, $${
-        len + 2
-      }) RETURNING *`;
+    const len = this.#columnsLen;
+    const arrangedValues = this.#arrangeByColumns(values);
+    const timestamp = getTimestamp();
+    const timestampsCols = Object.values(PgormModel.timestamps).sort();
+    const columns = Object.keys(this.columns);
+
+    // placeholders for timestamp cols i.e. $(len+1), $(len+2);
+    // i is 0 based so added one in it
+    const timestampPlaceholders = timestampsCols
+      .map((_, i) => '$' + len + (i + 1))
+      .join();
+
+    let insertQuery = `INSERT INTO ${
+      this.tableName
+    } (${columns.join()},${timestampsCols.join()}) VALUES (${
+      this.#columnsPlaceholders
+    }, $${timestampPlaceholders}) RETURNING *`;
 
     const { rows } = await PgormModel.#CLIENT.query(insertQuery, [
       ...arrangedValues,
-      timestamp,
-      timestamp,
+      timestamp, // createdAt
+      null, // deletedAt
+      timestamp, // updatedAt
     ]);
 
     return rows[0] || null;
@@ -584,9 +620,9 @@ class PgormModel {
     // if paranoid, do soft delete, put deleted=true
     if (this.#paranoidTable) {
       await PgormModel.#CLIENT.query(
-        `UPDATE ${this.tableName} SET ${this.timestamps.deletedAt}=$1 WHERE ${
-          this.#pkName
-        }=$2`,
+        `UPDATE ${this.tableName} SET ${
+          PgormModel.timestamps.deletedAt
+        }=$1 WHERE ${this.#pkName}=$2`,
         [getTimestamp(), id]
       );
       return true;
@@ -602,11 +638,11 @@ class PgormModel {
 }
 
 // static values
-PgormModel.prototype.timestamps = {
-  createdAt: 'created_at',
-  updatedAt: 'updated_at',
-  deletedAt: 'deleted_at',
-};
-PgormModel.prototype.flags = { isDeleted: 'is_deleted' };
+// PgormModel.prototype.timestamps = {
+//   createdAt: 'created_at',
+//   updatedAt: 'updated_at',
+//   deletedAt: 'deleted_at',
+// };
+// PgormModel.prototype.flags = { isDeleted: 'is_deleted' };
 
 module.exports = PgormModel;
