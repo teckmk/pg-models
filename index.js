@@ -534,7 +534,7 @@ class PgormModel {
    * const updatedUser = await Users.updateById(12,{fullname: 'Ali Hussain', age: 23});
    *
    * if(updatedUsers){
-   *    // user updated...
+   *    // user updated do something with updatedUser...
    * } else {
    *    // user not found with that id...
    * }
@@ -545,15 +545,24 @@ class PgormModel {
     this.#validate(values);
     await this.#validateBeforeUpdate?.(PgormModel.#CLIENT, values);
 
-    const len = this.#columnsLen,
-      arrangedValues = this.#arrangeByColumns(values),
-      updateQuery = `UPDATE ${this.tableName} 
-        set ${this.#updateCols}, ${PgormModel.#timestamps.updatedAt}=$${len + 1}
+    const len = this.#columnsLen;
+    const arrangedValues = this.#arrangeByColumns(values);
+
+    let columns = `${this.#updateCols}`;
+    let updateValues = arrangedValues;
+
+    // if timestamps are enabled, update value for updatedAt col
+    if (this.#useTimestamps) {
+      columns += `,${PgormModel.#timestamps.updatedAt}=${len + 1}`;
+      updateValues = [...arrangedValues, getTimestamp()];
+    }
+
+    const updateQuery = `UPDATE ${this.tableName} 
+        set ${columns}
         where ${this.#pkName}=$${len + 2} RETURNING ${this.#pkName}`;
 
     const { rows } = await PgormModel.#CLIENT.query(updateQuery, [
-      ...arrangedValues,
-      getTimestamp(),
+      ...updateValues,
       id,
     ]);
 
@@ -605,7 +614,6 @@ class PgormModel {
     }
 
     const insertQuery = `INSERT INTO ${this.tableName} (${insertColumns}) VALUES (${insertPlaceholders}) RETURNING *`;
-
     const { rows } = await PgormModel.#CLIENT.query(insertQuery, insertValues);
 
     return rows[0] || null;
@@ -614,7 +622,7 @@ class PgormModel {
   /**
    * Deletes the record by given id
    * @param {Number} id Id of the record to be deleted
-   * @returns true
+   * @returns boolean
    * @example
    * const isUserDeleted = await Users.deleteById(12);
    *
@@ -629,6 +637,12 @@ class PgormModel {
 
     // run record validation hook, if provided
     await this.#validateBeforeDestroy?.(PgormModel.#CLIENT, id);
+
+    // if record not found with id return false
+    const record = await this.findById(id);
+    if (!record) {
+      return false;
+    }
 
     // if paranoid, do soft delete, put deleted=true
     if (this.#paranoidTable) {
