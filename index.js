@@ -83,6 +83,15 @@ class PgormModel {
     return arr; // arrange values acc to columns
   }
 
+  #checkForDeletion(startWith = 'and') {
+    let deleteCheck = '';
+    // if modal is paranoid, check if record was not deleted
+    if (this.#paranoidTable) {
+      deleteCheck = `${startWith} ${this.timestamps.deletedAt}=null`;
+    }
+    return deleteCheck;
+  }
+
   /**
    * @version v1.0.7
    * @constructor Creates new modal and relevant table
@@ -397,7 +406,9 @@ class PgormModel {
    * const users = await Users.findAll();
    */
   async findAll(options) {
-    const { rows } = await PgormModel.#CLIENT.query(this.#selectQuery);
+    const { rows } = await PgormModel.#CLIENT.query(
+      `${this.#selectQuery} ${this.#checkForDeletion('WHERE')}`
+    );
     return rows;
   }
 
@@ -414,7 +425,7 @@ class PgormModel {
     verifyParamType(paramsArray, 'object', 'paramsArray', 'findAllWhere');
 
     const { rows } = await PgormModel.#CLIENT.query(
-      `${this.#selectQuery} ${whereClause}`,
+      `${this.#selectQuery} ${whereClause} ${this.#checkForDeletion()}`,
       paramsArray
     );
     return rows;
@@ -435,14 +446,8 @@ class PgormModel {
       throw new PgormError('Invalid column name', 'findOne');
     }
 
-    let deleteCheck = '';
-    // if modal is paranoid, check if record was not deleted
-    if (this.#paranoidTable) {
-      deleteCheck = `and ${this.timestamps.deletedAt}=null`;
-    }
-
     const { rows } = await PgormModel.#CLIENT.query(
-      `${this.#selectQuery} where ${column}=$1 ${deleteCheck}`,
+      `${this.#selectQuery} where ${column}=$1 ${this.#checkForDeletion()}`,
       [value]
     );
     return rows[0] || null;
@@ -460,7 +465,9 @@ class PgormModel {
     verifyParamType(id, 'number', 'id', 'findById');
 
     const { rows } = await PgormModel.#CLIENT.query(
-      `${this.#selectQuery} where ${this.#pkName}=$1`,
+      `${this.#selectQuery} where ${
+        this.#pkName
+      }=$1 ${this.#checkForDeletion()}`,
       [id]
     );
     return rows[0] || null;
