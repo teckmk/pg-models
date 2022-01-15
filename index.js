@@ -18,6 +18,12 @@ const modalOptions = {
   errorLogs: false,
 };
 
+const timestampsObj = {
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  deletedAt: 'deleted_at',
+};
+
 /**
  * Validation function for user input validation
  * @param {any} val Value entered for current column
@@ -62,11 +68,14 @@ class PgormModel {
   #tablePrefix;
   #tableSchema;
   #alterTable;
-  #useTimestamps;
+  #useTimestamps = false;
   #paranoidTable;
   #enableErrorLogs;
 
-  static models = {}; // since v1.0.7, reference to all instances
+  // since v1.0.7
+  static models = {}; // reference to all instances
+  static timestamps = timestampsObj;
+
   static #CLIENT;
 
   // private methods
@@ -112,10 +121,20 @@ class PgormModel {
     }
 
     // since v1.0.7
+    // if options.timestamps = bool
+    if (typeof options.timestamps === 'boolean') {
+      this.#useTimestamps = options.timestamps;
+    } else if (typeof options.timestamps === 'object') {
+      PgormModel.timestamps = {
+        ...PgormModel.timestamps,
+        ...options.timestamps,
+      };
+    }
+
+    // since v1.0.7
     this.#pkName = options.pkName;
     this.#tablePrefix = options.tablePrefix;
     this.#tableSchema = options.tableSchema;
-    this.#useTimestamps = options.timestamps;
     this.#paranoidTable = options.alter;
     this.#enableErrorLogs = options.errorLogs;
 
@@ -126,7 +145,7 @@ class PgormModel {
   }
 
   set tableName(tableName) {
-    this.#tableName = this.tablePrefix + tableName;
+    this.#tableName = this.#tablePrefix + tableName;
   }
 
   get tableName() {
@@ -214,7 +233,9 @@ class PgormModel {
 
         // get all columns in the table
         return PgormModel.#CLIENT.query(
-          `SELECT column_name FROM information_schema.columns WHERE table_schema='${this.tableSchema}' AND table_name='${this.tableName}'`
+          `SELECT column_name FROM information_schema.columns WHERE table_schema='${
+            this.#tableSchema
+          }' AND table_name='${this.tableName}'`
         );
       })
       .then(({ rows }) => {
