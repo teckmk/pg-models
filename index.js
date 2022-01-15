@@ -1,6 +1,19 @@
 const { PgormError } = require('./errors');
 const { getTimestamp, verifyParamType } = require('./util');
 
+// v1.0.7
+// tableName with tablePrefix
+// model options in constructor {tablePrefix, timestamps, alter, paranoid}
+
+const modalOptions = {
+  tableName: '',
+  tablePrefix: '',
+  tableSchema: 'public',
+  pkName: 'id',
+  timestamps: false,
+  paranoid: false,
+  alter: false,
+};
 /**
  * @class PgormModel
  * @summary
@@ -20,6 +33,16 @@ class PgormModel {
   #validateBeforeCreate;
   #validateBeforeUpdate;
   #validateBeforeDestroy;
+
+  // since v1.0.7
+  #tableName;
+  #tablePrefix;
+  #tableSchema;
+  #alterTable;
+  #useTimestamps;
+  #paranoidTable;
+
+  static models = {}; // since v1.0.7, reference to all instances
   static #CLIENT;
 
   // private methods
@@ -38,14 +61,59 @@ class PgormModel {
 
   /**
    * @constructor
-   * @param {string} tableName - The name of the table
+   * @param {string} modalName - The name of the modal and table
+   * @param {modalOptions} options - Modal customization options
    */
-  constructor(tableName) {
-    this.tableName = tableName;
-    this.#pkName = 'id';
-    this.tableSchema = 'public';
+  constructor(modelName = '', options = modalOptions) {
+    verifyParamType(modelName, 'string', 'modalName', 'constructor');
+    verifyParamType(options, 'object', 'modalName', 'constructor');
+
+    // if tableName is provided in options, use that
+    if (options.tableName) {
+      this.tableName = options.tableName;
+    } else {
+      // else use modalName as tableName
+      this.tableName = options.modelName;
+    }
+
+    PgormModel.models[modelName] = this; // add reference of this instance in models static var
+
+    this.pkName = options.pkName;
+    this.tableSchema = options.tableSchema;
     this.isTableCreated = false;
     this.customQueries = {};
+  }
+
+  set tableName(tableName) {
+    this.#tableName = this.tablePrefix + tableName;
+  }
+
+  get tableName() {
+    return this.#tableName;
+  }
+
+  set tablePrefix(prefix) {
+    this.#tablePrefix = prefix;
+  }
+
+  get tablePrefix() {
+    return this.#tablePrefix;
+  }
+
+  set tableSchema(schema) {
+    this.#tableSchema = schema;
+  }
+
+  get tableSchema() {
+    return this.#tableSchema;
+  }
+
+  set pkName(name) {
+    this.#pkName = name;
+  }
+
+  get pkName() {
+    return this.pkName;
   }
 
   /**
