@@ -7,6 +7,9 @@ const { getTimestamp, verifyParamType } = require('./util');
 
 // types
 
+/**
+ * @property {boolean | object} timestamps
+ */
 const modalOptions = {
   tableName: '',
   tablePrefix: '',
@@ -74,7 +77,7 @@ class PgormModel {
 
   // since v1.0.7
   static models = {}; // reference to all instances
-  static timestamps = timestampsObj;
+  static #timestamps = timestampsObj;
 
   static #CLIENT;
 
@@ -96,7 +99,7 @@ class PgormModel {
     let deleteCheck = '';
     // if modal is paranoid, check if record was not deleted
     if (this.#paranoidTable) {
-      deleteCheck = `${startWith} ${PgormModel.timestamps.deletedAt}=null`;
+      deleteCheck = `${startWith} ${PgormModel.#timestamps.deletedAt}=null`;
     }
     return deleteCheck;
   }
@@ -136,14 +139,14 @@ class PgormModel {
     if (typeof options.timestamps === 'boolean') {
       this.#useTimestamps = options.timestamps; // enable/disable timestamps
     }
-    // if options.timestamps = object. dev want to rename timestamps
+    // if options.timestamps = object, means dev wants to rename timestamps
     else if (typeof options.timestamps === 'object') {
       //1- enable timestamps
       this.#useTimestamps = true;
 
       //2- then overwrite crr values with provided vals
-      PgormModel.timestamps = {
-        ...PgormModel.timestamps,
+      PgormModel.#timestamps = {
+        ...PgormModel.#timestamps,
         ...options.timestamps,
       };
     }
@@ -217,7 +220,7 @@ class PgormModel {
     const columnValues = Object.keys(columns); // get all column names
 
     // get timestamps names and generate schema
-    const timestampsSchema = Object.values(PgormModel.timestamps)
+    const timestampsSchema = Object.values(PgormModel.#timestamps)
       .map((col) => `${col} TIMESTAMP`)
       .join();
 
@@ -228,7 +231,7 @@ class PgormModel {
 
     // include timestamps columns if enabled
     if (this.#useTimestamps) {
-      selectColumns += `,${Object.values(PgormModel.timestamps).join()}`;
+      selectColumns += `,${Object.values(PgormModel.#timestamps).join()}`;
     }
 
     // select query string
@@ -545,7 +548,7 @@ class PgormModel {
     const len = this.#columnsLen,
       arrangedValues = this.#arrangeByColumns(values),
       updateQuery = `UPDATE ${this.tableName} 
-        set ${this.#updateCols}, ${PgormModel.timestamps.updatedAt}=$${len + 1}
+        set ${this.#updateCols}, ${PgormModel.#timestamps.updatedAt}=$${len + 1}
         where ${this.#pkName}=$${len + 2} RETURNING ${this.#pkName}`;
 
     const { rows } = await PgormModel.#CLIENT.query(updateQuery, [
@@ -567,13 +570,13 @@ class PgormModel {
   async create(values) {
     verifyParamType(values, 'object', 'values', 'create');
 
-    this.#validate(values); // user input validations
-    await this.#validateBeforeCreate?.(PgormModel.#CLIENT, values); //record validations
+    this.#validate(values); // run user input validations
+    await this.#validateBeforeCreate?.(PgormModel.#CLIENT, values); // run record validations
 
     const len = this.#columnsLen;
     const arrangedValues = this.#arrangeByColumns(values);
     const timestamp = getTimestamp();
-    const timestampsCols = Object.values(PgormModel.timestamps).sort();
+    const timestampsCols = Object.values(PgormModel.#timestamps);
     const columns = Object.keys(this.columns);
 
     // placeholders for timestamp cols i.e. $(len+1), $(len+2);
@@ -582,18 +585,28 @@ class PgormModel {
       .map((_, i) => '$' + len + (i + 1))
       .join();
 
-    let insertQuery = `INSERT INTO ${
-      this.tableName
-    } (${columns.join()},${timestampsCols.join()}) VALUES (${
-      this.#columnsPlaceholders
-    }, $${timestampPlaceholders}) RETURNING *`;
+    let insertColumns = columns.join();
+    let insertPlaceholders = this.#columnsPlaceholders;
+    let insertValues = arrangedValues;
 
-    const { rows } = await PgormModel.#CLIENT.query(insertQuery, [
-      ...arrangedValues,
-      timestamp, // createdAt
-      null, // deletedAt
-      timestamp, // updatedAt
-    ]);
+    // if timestamps are enables, append timestamps config in query
+    if (this.#useTimestamps) {
+      // alphabatically sorted timestamps col names [createdAt,deletedAt,updatedAt]
+      insertColumns += `,${timestampsCols.sort().join()}`;
+      insertPlaceholders += `,$${timestampPlaceholders}`;
+
+      // concating timetamps values in arr
+      insertValues = [
+        ...insertValues,
+        timestamp, // createdAt
+        null, // deletedAt
+        timestamp, // updatedAt
+      ];
+    }
+
+    const insertQuery = `INSERT INTO ${this.tableName} (${insertColumns}) VALUES (${insertPlaceholders}) RETURNING *`;
+
+    const { rows } = await PgormModel.#CLIENT.query(insertQuery, insertValues);
 
     return rows[0] || null;
   }
@@ -621,7 +634,7 @@ class PgormModel {
     if (this.#paranoidTable) {
       await PgormModel.#CLIENT.query(
         `UPDATE ${this.tableName} SET ${
-          PgormModel.timestamps.deletedAt
+          PgormModel.#timestamps.deletedAt
         }=$1 WHERE ${this.#pkName}=$2`,
         [getTimestamp(), id]
       );
