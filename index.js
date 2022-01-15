@@ -15,9 +15,16 @@ const modalOptions = {
   timestamps: false,
   paranoid: false,
   alter: false,
+  errorLogs: false,
 };
 
-function validatorFn(val, col) {
+/**
+ * Validation function for user input validation
+ * @param {any} val Value entered for current column
+ * @param {string} col Name of current column
+ * @param {object} values All user entered values
+ */
+function validatorFn(val, col, values) {
   throw new Error('validation failed');
 }
 
@@ -57,6 +64,7 @@ class PgormModel {
   #alterTable;
   #useTimestamps;
   #paranoidTable;
+  #enableErrorLogs;
 
   static models = {}; // since v1.0.7, reference to all instances
   static #CLIENT;
@@ -100,6 +108,7 @@ class PgormModel {
     this.#tableSchema = options.tableSchema;
     this.#useTimestamps = options.timestamps;
     this.#paranoidTable = options.alter;
+    this.#enableErrorLogs = options.errorLogs;
 
     this.isTableCreated = false;
     this.customQueries = {};
@@ -156,10 +165,10 @@ class PgormModel {
    * });
    */
   define(columns = {}) {
-    const columnValues = Object.keys(columns);
+    const columnValues = Object.keys(columns); // get all column names
     const timestampsSchema = Object.values(this.timestamps)
       .map((col) => `${col} TIMESTAMP`)
-      .join();
+      .join(); // get timestamps names
     const tableColumnsSchema = [];
 
     this.columns = columns;
@@ -178,9 +187,8 @@ class PgormModel {
       .join();
     this.#columnsLen = columnValues.length;
 
-    // loop through columns get the name of every column
+    // loop through columns get the schema of every column
     for (const [key, value] of Object.entries(columns)) {
-      const colName = key;
       tableColumnsSchema.push(value.schema);
     }
     // create table if it doesnt exists
@@ -201,24 +209,29 @@ class PgormModel {
         );
       })
       .then(({ rows }) => {
+        // get column names from the result
         const tableColumnsNames = rows.map((col) => col.column_name);
-        // check if any column is missing in the table
+        // check if any column from columnsObj is missing in the table
         const missingColumns = Object.keys(this.columns).filter(
           (col) => !tableColumnsNames.includes(col)
         );
 
         // if any column is missing in the table
-        if (missingColumns.length) {
-          // add missing columns
+        // and #alterTable is set to true
+        if (missingColumns.length && this.#alterTable) {
+          // prepare query for missing columns
           const missingColumnsSchema = missingColumns
             .map((col) => `ADD COLUMN ${this.columns[col].schema}`)
             .join();
+          // add missing columns in the table
           PgormModel.#CLIENT.query(`ALTER TABLE ${this.tableName} 
           ${missingColumnsSchema}`);
         }
       })
       .catch((err) => {
-        console.log(err);
+        if (this.#enableErrorLogs) {
+          console.log(err);
+        }
         throw new PgormError(
           `Unable to define model for ${this.tableName}`,
           'define'
@@ -418,11 +431,18 @@ class PgormModel {
   async findOne(column, value) {
     verifyParamType(column, 'string', 'column', 'findOne');
     // check if column is in this.columns;
-    if (!this.columns[column])
+    if (!this.columns[column]) {
       throw new PgormError('Invalid column name', 'findOne');
+    }
+
+    let deleteCheck = '';
+    // if modal is paranoid, check if record was not deleted
+    if (this.#paranoidTable) {
+      deleteCheck = `and ${this.timestamps.deletedAt}=null`;
+    }
 
     const { rows } = await PgormModel.#CLIENT.query(
-      `${this.#selectQuery} where ${column}=$1`,
+      `${this.#selectQuery} where ${column}=$1 ${deleteCheck}`,
       [value]
     );
     return rows[0] || null;
@@ -530,15 +550,16 @@ class PgormModel {
   async deleteById(id) {
     verifyParamType(id, 'number', 'id', 'deleteById');
 
+    // run record validation hook, if provided
     await this.#validateBeforeDestroy?.(PgormModel.#CLIENT, id);
 
-    if (this.paranoid) {
-      // if paranoid, do soft delete, put deleted=true
+    // if paranoid, do soft delete, put deleted=true
+    if (this.#paranoidTable) {
       await PgormModel.#CLIENT.query(
-        `UPDATE ${this.tableName} SET ${this.flags.isDeleted}=$1 WHERE ${
+        `UPDATE ${this.tableName} SET ${this.timestamps.deletedAt}=$1 WHERE ${
           this.#pkName
         }=$2`,
-        [true, id]
+        [getTimestamp(), id]
       );
       return true;
     } else {
@@ -556,6 +577,7 @@ class PgormModel {
 PgormModel.prototype.timestamps = {
   createdAt: 'created_at',
   updatedAt: 'updated_at',
+  deletedAt: 'deleted_at',
 };
 PgormModel.prototype.flags = { isDeleted: 'is_deleted' };
 
