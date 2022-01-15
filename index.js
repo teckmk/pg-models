@@ -5,6 +5,8 @@ const { getTimestamp, verifyParamType } = require('./util');
 // tableName with tablePrefix
 // model options in constructor {tablePrefix, timestamps, alter, paranoid}
 
+// types
+
 const modalOptions = {
   tableName: '',
   tablePrefix: '',
@@ -14,6 +16,20 @@ const modalOptions = {
   paranoid: false,
   alter: false,
 };
+
+function validatorFn(val, col) {
+  throw new Error('validation failed');
+}
+
+const columnsObj = {
+  columnName: {
+    schema: 'columnName TEXT NOT NULL',
+    validations: [validatorFn],
+  },
+  // ...other columns
+};
+// end types
+
 /**
  * @class PgormModel
  * @summary
@@ -60,14 +76,16 @@ class PgormModel {
   }
 
   /**
-   * @constructor
+   * @version v1.0.7
+   * @constructor Creates new modal and relevant table
    * @param {string} modalName - The name of the modal and table
    * @param {modalOptions} options - Modal customization options
    */
   constructor(modelName = '', options = modalOptions) {
     verifyParamType(modelName, 'string', 'modalName', 'constructor');
-    verifyParamType(options, 'object', 'modalName', 'constructor');
+    verifyParamType(options, 'object', 'modalName', 'constructor'); // since v1.0.7
 
+    // since v1.0.7
     // if tableName is provided in options, use that
     if (options.tableName) {
       this.tableName = options.tableName;
@@ -76,12 +94,17 @@ class PgormModel {
       this.tableName = options.modelName;
     }
 
-    PgormModel.models[modelName] = this; // add reference of this instance in models static var
+    // since v1.0.7
+    this.#pkName = options.pkName;
+    this.#tablePrefix = options.tablePrefix;
+    this.#tableSchema = options.tableSchema;
+    this.#useTimestamps = options.timestamps;
+    this.#paranoidTable = options.alter;
 
-    this.pkName = options.pkName;
-    this.tableSchema = options.tableSchema;
     this.isTableCreated = false;
     this.customQueries = {};
+
+    PgormModel.models[modelName] = this; // add reference of this instance in models static var
   }
 
   set tableName(tableName) {
@@ -92,33 +115,9 @@ class PgormModel {
     return this.#tableName;
   }
 
-  set tablePrefix(prefix) {
-    this.#tablePrefix = prefix;
-  }
-
-  get tablePrefix() {
-    return this.#tablePrefix;
-  }
-
-  set tableSchema(schema) {
-    this.#tableSchema = schema;
-  }
-
-  get tableSchema() {
-    return this.#tableSchema;
-  }
-
-  set pkName(name) {
-    this.#pkName = name;
-  }
-
-  get pkName() {
-    return this.pkName;
-  }
-
   /**
    * @static
-   * @param {PG_Client} dbConnection The pg client object returned by pg.connect()
+   * @param {PG_Client} dbConnection The pg client object returned by `pg.connect()`
    * @example
    * PgormModel.useConnection(pgClient);
    */
@@ -128,8 +127,8 @@ class PgormModel {
 
   /**
    * Creates new table for the model with given configurations. Alters the table if already exists according to the given configurations.
-   * @param {Object} columns Table columns with configurations
-   * @param {Object} options Options to modify the behaviour of PgormModel
+   * @param {columnsObj} columns Table columns with configurations
+   * @param {object} options Options to modify the behaviour of PgormModel
    * @example
    * Users.define({
    *   fullname: {
@@ -156,12 +155,12 @@ class PgormModel {
    *   },
    * });
    */
-  define(columns = {}, options = {}) {
-    const columnValues = Object.keys(columns),
-      timestampsSchema = Object.values(this.timestamps)
-        .map((col) => `${col} TIMESTAMP`)
-        .join(),
-      tableColumnsSchema = [];
+  define(columns = {}) {
+    const columnValues = Object.keys(columns);
+    const timestampsSchema = Object.values(this.timestamps)
+      .map((col) => `${col} TIMESTAMP`)
+      .join();
+    const tableColumnsSchema = [];
 
     this.columns = columns;
     this.#selectQuery = `SELECT 
