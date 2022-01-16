@@ -618,7 +618,7 @@ class PgormModel {
 
     // if timestamps are enabled, update value for updatedAt col
     if (this.#useTimestamps) {
-      columns += `,${PgormModel.#timestamps.updatedAt}=${len + 1}`;
+      columns += `,${PgormModel.#timestamps.updatedAt}=$${len + 1}`;
       updateValues = [...arrangedValues, getTimestamp()];
     }
 
@@ -679,8 +679,6 @@ class PgormModel {
     }
 
     const insertQuery = `INSERT INTO ${this.tableName} (${insertColumns}) VALUES (${insertPlaceholders}) RETURNING *`;
-    console.log({ insertQuery });
-    console.log({ insertColumns });
     const { rows } = await PgormModel.#CLIENT.query(insertQuery, insertValues);
 
     return rows[0] || null;
