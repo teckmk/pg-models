@@ -656,7 +656,7 @@ class PgormModel {
     // placeholders for timestamp cols i.e. $(len+1), $(len+2);
     // i is 0 based so added one in it
     const timestampPlaceholders = timestampsCols
-      .map((_, i) => '$' + len + (i + 1))
+      .map((_, i) => '$' + (len + i + 1))
       .join();
 
     let insertColumns = columns.join();
@@ -667,7 +667,7 @@ class PgormModel {
     if (this.#useTimestamps) {
       // alphabatically sorted timestamps col names [createdAt,deletedAt,updatedAt]
       insertColumns += `,${timestampsCols.sort().join()}`;
-      insertPlaceholders += `,$${timestampPlaceholders}`;
+      insertPlaceholders += `,${timestampPlaceholders}`;
 
       // concating timetamps values in arr
       insertValues = [
@@ -679,6 +679,8 @@ class PgormModel {
     }
 
     const insertQuery = `INSERT INTO ${this.tableName} (${insertColumns}) VALUES (${insertPlaceholders}) RETURNING *`;
+    console.log({ insertQuery });
+    console.log({ insertColumns });
     const { rows } = await PgormModel.#CLIENT.query(insertQuery, insertValues);
 
     return rows[0] || null;
