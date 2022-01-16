@@ -141,7 +141,7 @@ class PgormModel {
     this.#pkName = this.#configOptions.pkName;
     this.#tablePrefix = this.#configOptions.tablePrefix;
     this.#tableSchema = this.#configOptions.tableSchema;
-    this.#paranoidTable = this.#configOptions.alter;
+    this.#paranoidTable = this.#configOptions.paranoid;
     this.#enableErrorLogs = this.#configOptions.errorLogs;
 
     this.isTableCreated = false;
@@ -711,6 +711,13 @@ class PgormModel {
 
     // if paranoid, do soft delete, put deleted=true
     if (this.#paranoidTable) {
+      // throw error if timestamps are not enabled
+      if (!this.#useTimestamps) {
+        throw new PgormError(
+          'modalOptions.timestamps need to be enabled for modalOptions.paranoid to work.',
+          'deleteById'
+        );
+      }
       await PgormModel.#CLIENT.query(
         `UPDATE ${this.tableName} SET ${
           PgormModel.#timestamps.deletedAt
