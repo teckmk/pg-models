@@ -103,7 +103,7 @@ class PgormModel {
     let deleteCheck = '';
     // if modal is paranoid, check if record was not deleted
     if (this.#paranoidTable) {
-      deleteCheck = `${startWith} ${PgormModel.#timestamps.deletedAt}=null`;
+      deleteCheck = `${startWith} ${PgormModel.#timestamps.deletedAt} is null`;
     }
     return deleteCheck;
   }
@@ -724,6 +724,7 @@ class PgormModel {
         }=$1 WHERE ${this.#pkName}=$2`,
         [getTimestamp(), id]
       );
+
       return true;
     } else {
       // else do hard delete
