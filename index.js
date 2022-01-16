@@ -624,7 +624,7 @@ class PgormModel {
 
     const updateQuery = `UPDATE ${this.tableName} 
         set ${columns}
-        where ${this.#pkName}=$${len + 2} RETURNING ${this.#pkName}`;
+        where ${this.#pkName}=$${len + 2} RETURNING *`;
 
     const { rows } = await PgormModel.#CLIENT.query(updateQuery, [
       ...updateValues,
