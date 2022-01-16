@@ -74,6 +74,7 @@ class PgormModel {
   #useTimestamps;
   #paranoidTable;
   #enableErrorLogs;
+  #configOptions;
 
   // since v1.0.7
   static models = {}; // reference to all instances
@@ -126,42 +127,42 @@ class PgormModel {
     verifyParamType(options, 'object', 'modalName', 'constructor'); // since v1.0.7
 
     // since v1.0.7
-    // if tableName is provided in options, use that
-    if (options.tableName) {
-      this.tableName = options.tableName;
+    this.#pkName = this.#configOptions.pkName;
+    this.#tablePrefix = this.#configOptions.tablePrefix;
+    this.#tableSchema = this.#configOptions.tableSchema;
+    this.#paranoidTable = this.#configOptions.alter;
+    this.#enableErrorLogs = this.#configOptions.errorLogs;
+
+    this.isTableCreated = false;
+    this.customQueries = {};
+
+    PgormModel.models[modelName] = this; // add reference of this instance in models static var
+
+    // since v1.0.7
+    // if tableName is provided in this.#configOptions, use that
+    if (this.#configOptions.tableName) {
+      this.#tableName = this.#configOptions.tableName;
     } else {
       // else use modalName as tableName
-      this.tableName = options.modelName;
+      this.#tableName = modelName;
     }
 
     // since v1.0.7
-    // if options.timestamps = bool
-    if (typeof options.timestamps === 'boolean') {
-      this.#useTimestamps = options.timestamps; // enable/disable timestamps
+    // if this.#configOptions.timestamps = bool
+    if (typeof this.#configOptions.timestamps === 'boolean') {
+      this.#useTimestamps = this.#configOptions.timestamps; // enable/disable timestamps
     }
-    // if options.timestamps = object, means dev wants to rename timestamps
-    else if (typeof options.timestamps === 'object') {
+    // if this.#configOptions.timestamps = object, means dev wants to rename timestamps
+    else if (typeof this.#configOptions.timestamps === 'object') {
       //1- enable timestamps
       this.#useTimestamps = true;
 
       //2- then overwrite crr values with provided vals
       PgormModel.#timestamps = {
         ...PgormModel.#timestamps,
-        ...options.timestamps,
+        ...this.#configOptions.timestamps,
       };
     }
-
-    // since v1.0.7
-    this.#pkName = options.pkName;
-    this.#tablePrefix = options.tablePrefix;
-    this.#tableSchema = options.tableSchema;
-    this.#paranoidTable = options.alter;
-    this.#enableErrorLogs = options.errorLogs;
-
-    this.isTableCreated = false;
-    this.customQueries = {};
-
-    PgormModel.models[modelName] = this; // add reference of this instance in models static var
   }
 
   /**
@@ -380,9 +381,9 @@ class PgormModel {
   }
 
   /**
-   * Creates a foreign key.
-   * Throws error if the foreign key already exists or column is not defined in parent model.
-   * @param {String} fkName Name of the foreign key, fKName must be present in the parent model
+   * Creates a foreign key. fkName must be present in the model
+   * Throws error if the foreign key already exists or column is not defined in the model.
+   * @param {String} fkName Name of the foreign key
    * @param {String} parentTableName The name of the parent table to which key is being linked
    * @example
    * const Books = new PgormModel('books', {
@@ -406,20 +407,27 @@ class PgormModel {
       'addForeignKey'
     );
 
-    const thisMethodName = 'addForeignKey',
-      contraintName = `${this.tableName}_${fkName}_fkey`;
+    const thisMethodName = 'addForeignKey';
+    const contraintName = `${this.tableName}_${fkName}_fkey`;
 
     (async () => {
       try {
-        // check if fkName column exists
+        // check if fkName column exists in this table
         const { rows: columns } = await PgormModel.#CLIENT.query(
-          `SELECT EXISTS (SELECT 1 
-      FROM information_schema.columns 
-      WHERE table_schema='${this.tableSchema}' AND table_name='${this.tableName}' AND column_name='${fkName}');`
+          `SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema='${this.#tableSchema}' 
+            AND table_name='${this.#tableName}' 
+            AND column_name='${fkName}'
+          );`
         );
+
+        // if foreign key column is not found, throw err
         if (!columns[0].exists) {
           throw new PgormError(
-            `column ${fkName} in addForeignKey does not exist`,
+            `column ${fkName} does not exist in ${
+              this.#tableName
+            }, in addForeignKey`,
             thisMethodName
           );
         }
@@ -428,7 +436,9 @@ class PgormModel {
         const { rows: constraints } = await PgormModel.#CLIENT.query(
           `SELECT EXISTS (SELECT 1 
       FROM information_schema.table_constraints 
-      WHERE table_schema='${this.tableSchema}' AND table_name='${this.tableName}' AND constraint_name='${contraintName}');`
+      WHERE table_schema='${this.#tableSchema}' AND table_name='${
+            this.tableName
+          }' AND constraint_name='${contraintName}');`
         );
 
         // if foreign key doesnt exist already
@@ -663,13 +673,5 @@ class PgormModel {
     }
   }
 }
-
-// static values
-// PgormModel.prototype.timestamps = {
-//   createdAt: 'created_at',
-//   updatedAt: 'updated_at',
-//   deletedAt: 'deleted_at',
-// };
-// PgormModel.prototype.flags = { isDeleted: 'is_deleted' };
 
 module.exports = PgormModel;
