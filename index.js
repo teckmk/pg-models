@@ -7,11 +7,7 @@ const { getTimestamp, verifyParamType } = require('./util');
 
 // types
 
-/**
- * @property {boolean | object} timestamps
- */
-const modalOptions = {
-  tableName: '',
+const globalOptions = {
   tablePrefix: '',
   tableSchema: 'public',
   pkName: 'id',
@@ -19,6 +15,14 @@ const modalOptions = {
   paranoid: false,
   alter: false,
   errorLogs: false,
+};
+
+/**
+ * @property {boolean | object} timestamps
+ */
+const modalOptions = {
+  ...globalOptions,
+  tableName: '',
 };
 
 const timestampsObj = {
@@ -70,7 +74,6 @@ class PgormModel {
   #tableName;
   #tablePrefix;
   #tableSchema;
-  #alterTable;
   #useTimestamps;
   #paranoidTable;
   #enableErrorLogs;
@@ -79,7 +82,7 @@ class PgormModel {
   // since v1.0.7
   static models = {}; // reference to all instances
   static #timestamps = timestampsObj;
-
+  static #globalConfigOptions; // Model wise global options
   static #CLIENT;
 
   // private methods
@@ -124,9 +127,17 @@ class PgormModel {
    */
   constructor(modelName = '', options = modalOptions) {
     verifyParamType(modelName, 'string', 'modalName', 'constructor');
-    verifyParamType(options, 'object', 'modalName', 'constructor'); // since v1.0.7
+    verifyParamType(options, 'object', 'options', 'constructor'); // since v1.0.7
 
     // since v1.0.7
+    // overwrite existing if:
+    // global config is provided
+    // overwrite global if modal wise config is provided
+    this.#configOptions = {
+      ...modalOptions,
+      ...PgormModel.#globalConfigOptions,
+      ...options,
+    };
     this.#pkName = this.#configOptions.pkName;
     this.#tablePrefix = this.#configOptions.tablePrefix;
     this.#tableSchema = this.#configOptions.tableSchema;
@@ -141,10 +152,11 @@ class PgormModel {
     // since v1.0.7
     // if tableName is provided in this.#configOptions, use that
     if (this.#configOptions.tableName) {
-      this.#tableName = this.#configOptions.tableName;
+      // setting tableName using setter
+      this.tableName = this.#configOptions.tableName;
     } else {
       // else use modalName as tableName
-      this.#tableName = modelName;
+      this.tableName = modelName;
     }
 
     // since v1.0.7
@@ -187,6 +199,16 @@ class PgormModel {
   }
 
   /**
+   * Sets options for `PgormModel` class that will apply to all instances of this class.
+   * Use this method if you want to customize all models once.
+   * @param {globalOptions} options Configuration options.
+   */
+  static setOptions(options) {
+    // overwrite global options with provided ones
+    PgormModel.#globalConfigOptions = { ...globalOptions, ...options };
+  }
+
+  /**
    * Creates new table for the model with given configurations. Alters the table if already exists according to the given configurations.
    * @param {columnsObj} columns Table columns with configurations
    * @param {object} options Options to modify the behaviour of PgormModel
@@ -221,9 +243,9 @@ class PgormModel {
     const columnValues = Object.keys(columns); // get all column names
 
     // get timestamps names and generate schema
-    const timestampsSchema = Object.values(PgormModel.#timestamps)
-      .map((col) => `${col} TIMESTAMP`)
-      .join();
+    const timestampsSchema = Object.values(PgormModel.#timestamps).map(
+      (col) => `${col} TIMESTAMP`
+    );
 
     this.columns = columns; // set columns to be accessibe in the class
 
@@ -262,7 +284,7 @@ class PgormModel {
 
     // if timestamps are enabled, add timestamps as table columns
     if (this.#useTimestamps) {
-      createTableCols += `,${timestampsSchema}`;
+      createTableCols += `,${timestampsSchema.join()}`;
     }
 
     // create table if it doesnt exists
@@ -288,17 +310,50 @@ class PgormModel {
           (col) => !tableColumnsNames.includes(col)
         );
 
-        // if any column is missing in the table
-        // and #alterTable is set to true
-        if (missingColumns.length && this.#alterTable) {
-          // prepare query for missing columns
-          const missingColumnsSchema = missingColumns
-            .map((col) => `ADD COLUMN ${this.columns[col].schema}`)
-            .join();
-          // add missing columns in the table
-          PgormModel.#CLIENT.query(`ALTER TABLE ${this.tableName} 
-          ${missingColumnsSchema}`);
+        // check if timestamps are enabled and are missing in the table
+        const missingTimestamps = Object.values(PgormModel.#timestamps).filter(
+          (ts) => !tableColumnsNames.includes(ts)
+        );
+
+        // if any column (or timestamp) is missing in the table
+        // and #configOptions.alter is set to true
+        if (this.#configOptions.alter) {
+          let colsSchema = '';
+          if (missingColumns.length) {
+            // prepare schema for missing columns
+            colsSchema = missingColumns
+              .map((col) => `ADD COLUMN ${this.columns[col].schema}`)
+              .join();
+          }
+          if (missingTimestamps.length && this.#useTimestamps) {
+            // if colsSchema is not empty, add trailing comma
+            if (colsSchema !== '') {
+              colsSchema += ',';
+            }
+            // append schema for timestamps
+            colsSchema += `${timestampsSchema
+              .map((col) => `ADD COLUMN IF NOT EXISTS ${col}`)
+              .join()}`;
+          }
+
+          // if colsSchema is not empty
+          if (colsSchema && colsSchema !== '') {
+            // add missing columns in the table
+            PgormModel.#CLIENT.query(`ALTER TABLE ${this.tableName} 
+          ${colsSchema}`);
+          }
         }
+
+        // if (missingColumns.length && this.#configOptions.alter) {
+        //   // prepare query for missing columns
+        //   let missingColumnsSchema = missingColumns
+        //     .map((col) => `ADD COLUMN ${this.columns[col].schema}`)
+        //     .join();
+
+        //   // add missing columns in the table
+        //   PgormModel.#CLIENT.query(`ALTER TABLE ${this.tableName}
+        //   ${missingColumnsSchema}`);
+        // }
       })
       .catch((err) => {
         if (this.#enableErrorLogs) {
