@@ -1,6 +1,6 @@
 {
   "name": "pg-models",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "ORM to use with your existing pg driver code. Write new code using ORM essentials and make it work with existing code without modifying it.",
   "main": "index.js",
   "scripts": {
