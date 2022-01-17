@@ -106,6 +106,13 @@ class PgormModel {
   #configOptions;
 
   // since v1.0.7
+  /**
+   * Refrences of all instances of this class
+   * @property {object} instances
+   * @static
+   * @example
+   * PgormModel.models.myModelName // returns instance of myModelName
+   */
   static models = {}; // reference to all instances
   static #timestamps = timestampsObj;
   static #globalConfigOptions; // Model wise global options
@@ -231,6 +238,15 @@ class PgormModel {
    * Use this method if you want to customize all models once.
    * @param {globalOptions} options Configuration options.
    * @static
+   * @example
+   * PgormModel.setGlobalOptions({
+   *   tablePrefix: 'my_',
+   *   tableSchema: 'public',
+   *   timestamps: true,
+   *   pkName: 'id',
+   *   paranoid: true,
+   *   errorLogs: true,
+   * });
    */
   static setOptions(options) {
     // overwrite global options with provided ones
