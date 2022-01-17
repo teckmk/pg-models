@@ -4,8 +4,9 @@
   "description": "ORM to use with your existing pg driver code. Write new code using ORM essentials and make it work with existing code without modifying it.",
   "main": "index.js",
   "scripts": {
-    "docs": "doxdox 'index.js' --layout markdown --output README.md",
-    "publish-patch": "npm run docs && git add . && git commit -m 'docs: update' && git push && npm version patch && npm publish"
+    "get-desc": "node -p -e 'require(\"./package.json\").description'",
+    "docs": "rm README.md; cp INSTALL.md README.md; jsdoc2md index.js >> README.md",
+    "publish-patch": "npm run docs && git add . && git commit -m 'docs & version: update' && git push && npm version patch && npm publish"
   },
   "keywords": [
     "ORM",

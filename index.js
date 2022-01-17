@@ -1,12 +1,24 @@
 const { PgormError } = require('./errors');
 const { getTimestamp, verifyParamType } = require('./util');
 
-// v1.0.7
-// tableName with tablePrefix
-// model options in constructor {tablePrefix, timestamps, alter, paranoid}
-
-// types
-
+/**
+ * @property {string} tablePrefix Prefix for table name
+ * @property {string} tableSchema Schema for table
+ * @property {string} pkName Name of primary key of table
+ * @property {boolean | object} timestamps Whether to add timestamps or not, provide object to override default values
+ * @example
+ * // timestamps property can be boolean or object
+ * timestamps: true
+ * // or
+ * timestamps: {
+ *    createdAt: 'created_at',
+ *    updatedAt: 'updated_at',
+ *    deletedAt: 'deleted_at',
+ * }
+ * @property {boolean} paranoid Whether to soft delete or not
+ * @property {boolean} alter Whether to alter table (on config change) or not
+ * @property {boolean} errorLogs Whether to log errors or not
+ */
 const globalOptions = {
   tablePrefix: '',
   tableSchema: 'public',
@@ -18,7 +30,8 @@ const globalOptions = {
 };
 
 /**
- * @property {boolean | object} timestamps
+ * All globalOptions plus option to change table name
+ * @property {tableName} string Name of table for current model
  */
 const modalOptions = {
   ...globalOptions,
@@ -41,6 +54,20 @@ function validatorFn(val, col, values) {
   throw new Error('validation failed');
 }
 
+/**
+ * define columns according to following object structure
+ * @property {object} columnName Name of the column
+ * @property {string} schema Schema of the column
+ * @property {Array} validations Array of validation functions
+ * @example
+ * const columnsObj = {
+ *  columnName: {
+ *    schema: 'columnName TEXT NOT NULL',
+ *    validations: [validatorFn],
+ *  },
+ *  // ...other columns
+ *};
+ */
 const columnsObj = {
   columnName: {
     schema: 'columnName TEXT NOT NULL',
@@ -51,12 +78,11 @@ const columnsObj = {
 // end types
 
 /**
- * @class PgormModel
  * @summary
  * Installation: npm install pg-models
  * @example
  * const PgormModel = require('pg-models');
- * @example
+ *
  * const Users = new PgormModel('users');
  */
 class PgormModel {
@@ -120,10 +146,11 @@ class PgormModel {
   }
 
   /**
-   * @version v1.0.7
-   * @constructor Creates new modal and relevant table
+   * Creates new modal and relevant table
    * @param {string} modalName - The name of the modal and table
    * @param {modalOptions} options - Modal customization options
+   * @constructor
+   * @version v1.0.7
    */
   constructor(modelName = '', options = modalOptions) {
     verifyParamType(modelName, 'string', 'modalName', 'constructor');
@@ -193,6 +220,7 @@ class PgormModel {
    * @param {PG_Client} dbConnection The pg client object returned by `pg.connect()`
    * @example
    * PgormModel.useConnection(pgClient);
+   * @static
    */
   static useConnection(dbConnection) {
     PgormModel.#CLIENT = dbConnection;
@@ -202,6 +230,7 @@ class PgormModel {
    * Sets options for `PgormModel` class that will apply to all instances of this class.
    * Use this method if you want to customize all models once.
    * @param {globalOptions} options Configuration options.
+   * @static
    */
   static setOptions(options) {
     // overwrite global options with provided ones
@@ -367,6 +396,234 @@ class PgormModel {
   }
 
   /**
+   * Gets all the results in the model
+   * @param {Object} options Options to configure the query
+   * @returns Array of results or an empty array
+   * @async
+   * @example
+   * const users = await Users.findAll();
+   */
+  async findAll(options) {
+    const { rows } = await PgormModel.#CLIENT.query(
+      `${this.#selectQuery} ${this.#checkForDeletion('WHERE')}`
+    );
+    return rows;
+  }
+
+  /**
+   * Gets all the results in the model, matching whereClause
+   * @param {String} whereClause SQL query starting with 'WHERE'
+   * @param {Array} paramsArray Array of values for the query placeholders
+   * @returns Array of results or an emtpy array
+   * @async
+   * @example
+   * const users = await Users.findAllWhere('WHERE age>=$1', [20]);
+   */
+  async findAllWhere(whereClause, paramsArray) {
+    verifyParamType(whereClause, 'string', 'whereClause', 'findAllWhere');
+    verifyParamType(paramsArray, 'object', 'paramsArray', 'findAllWhere');
+
+    const { rows } = await PgormModel.#CLIENT.query(
+      `${this.#selectQuery} ${whereClause} ${this.#checkForDeletion()}`,
+      paramsArray
+    );
+    return rows;
+  }
+
+  /**
+   * Gets the one matching result
+   * @param {String} column Name of the column to search
+   * @param {String} value Value for the column to match
+   * @returns Object or null
+   * @async
+   * @example
+   * const user = await Users.findOne('fullname', 'Ali Hassan');
+   */
+  async findOne(column, value) {
+    verifyParamType(column, 'string', 'column', 'findOne');
+    // check if column is in this.columns;
+    if (!this.columns[column]) {
+      throw new PgormError('Invalid column name', 'findOne');
+    }
+
+    const { rows } = await PgormModel.#CLIENT.query(
+      `${this.#selectQuery} where ${column}=$1 ${this.#checkForDeletion()}`,
+      [value]
+    );
+    return rows[0] || null;
+  }
+
+  /**
+   * Gets the result from the model against the given id.
+   * Return null if no result found.
+   * @param {Number} id Id of the result
+   * @returns Object or null
+   * @async
+   * @example
+   * const user = await Users.findById(12);
+   */
+  async findById(id) {
+    verifyParamType(id, 'number', 'id', 'findById');
+
+    const { rows } = await PgormModel.#CLIENT.query(
+      `${this.#selectQuery} where ${
+        this.#pkName
+      }=$1 ${this.#checkForDeletion()}`,
+      [id]
+    );
+    return rows[0] || null;
+  }
+
+  /**
+   * Updates the record by given id
+   * @param {Number} id Id of the record to be updated
+   * @param {Object} values New values for the record
+   * @returns Updated record or null
+   * @async
+   * @example
+   * const updatedUser = await Users.updateById(12,{fullname: 'Ali Hussain', age: 23});
+   *
+   * if(updatedUsers){
+   *    // user updated do something with updatedUser...
+   * } else {
+   *    // user not found with that id...
+   * }
+   */
+  async updateById(id, values) {
+    verifyParamType(id, 'number', 'id', 'updateById');
+
+    this.#validate(values);
+    await this.#validateBeforeUpdate?.(PgormModel.#CLIENT, values);
+
+    const len = this.#columnsLen;
+    const arrangedValues = this.#arrangeByColumns(values);
+
+    let columns = `${this.#updateCols}`;
+    let updateValues = arrangedValues;
+
+    // if timestamps are enabled, update value for updatedAt col
+    if (this.#useTimestamps) {
+      columns += `,${PgormModel.#timestamps.updatedAt}=$${len + 1}`;
+      updateValues = [...arrangedValues, getTimestamp()];
+    }
+
+    const updateQuery = `UPDATE ${this.tableName} 
+        set ${columns}
+        where ${this.#pkName}=$${len + 2} RETURNING *`;
+
+    const { rows } = await PgormModel.#CLIENT.query(updateQuery, [
+      ...updateValues,
+      id,
+    ]);
+
+    return rows[0] || null;
+  }
+
+  /**
+   * Creates new record
+   * @param {Object} values Values for the new record
+   * @returns Created record or null
+   * @async
+   * @example
+   * const user = await Users.create({fullname: 'Huzaifa Tayyab', age: 23});
+   */
+  async create(values) {
+    verifyParamType(values, 'object', 'values', 'create');
+
+    this.#validate(values); // run user input validations
+    await this.#validateBeforeCreate?.(PgormModel.#CLIENT, values); // run record validations
+
+    const len = this.#columnsLen;
+    const arrangedValues = this.#arrangeByColumns(values);
+    const timestamp = getTimestamp();
+    const timestampsCols = Object.values(PgormModel.#timestamps);
+    const columns = Object.keys(this.columns);
+
+    // placeholders for timestamp cols i.e. $(len+1), $(len+2);
+    // i is 0 based so added one in it
+    const timestampPlaceholders = timestampsCols
+      .map((_, i) => '$' + (len + i + 1))
+      .join();
+
+    let insertColumns = columns.join();
+    let insertPlaceholders = this.#columnsPlaceholders;
+    let insertValues = arrangedValues;
+
+    // if timestamps are enables, append timestamps config in query
+    if (this.#useTimestamps) {
+      // alphabatically sorted timestamps col names [createdAt,deletedAt,updatedAt]
+      insertColumns += `,${timestampsCols.sort().join()}`;
+      insertPlaceholders += `,${timestampPlaceholders}`;
+
+      // concating timetamps values in arr
+      insertValues = [
+        ...insertValues,
+        timestamp, // createdAt
+        null, // deletedAt
+        timestamp, // updatedAt
+      ];
+    }
+
+    const insertQuery = `INSERT INTO ${this.tableName} (${insertColumns}) VALUES (${insertPlaceholders}) RETURNING *`;
+    const { rows } = await PgormModel.#CLIENT.query(insertQuery, insertValues);
+
+    return rows[0] || null;
+  }
+
+  /**
+   * Deletes the record by given id
+   * @param {Number} id Id of the record to be deleted
+   * @returns boolean
+   * @async
+   * @example
+   * const isUserDeleted = await Users.deleteById(12);
+   *
+   * if(isUserDeleted){
+   *    // deleted
+   * } else {
+   *    // user not found with that id
+   * }
+   */
+  async deleteById(id) {
+    verifyParamType(id, 'number', 'id', 'deleteById');
+
+    // run record validation hook, if provided
+    await this.#validateBeforeDestroy?.(PgormModel.#CLIENT, id);
+
+    // if record not found with id return false
+    const record = await this.findById(id);
+    if (!record) {
+      return false;
+    }
+
+    // if paranoid, do soft delete, put deleted=true
+    if (this.#paranoidTable) {
+      // throw error if timestamps are not enabled
+      if (!this.#useTimestamps) {
+        throw new PgormError(
+          'modalOptions.timestamps need to be enabled for modalOptions.paranoid to work.',
+          'deleteById'
+        );
+      }
+      await PgormModel.#CLIENT.query(
+        `UPDATE ${this.tableName} SET ${
+          PgormModel.#timestamps.deletedAt
+        }=$1 WHERE ${this.#pkName}=$2`,
+        [getTimestamp(), id]
+      );
+
+      return true;
+    } else {
+      // else do hard delete
+      await PgormModel.#CLIENT.query(
+        `DELETE FROM ${this.tableName} WHERE ${this.#pkName}=$1`,
+        [id]
+      );
+      return true;
+    }
+  }
+
+  /**
    * Registers a validator hook, which is called before every 'create' operation on this model.
    * Validator function must throw error on validation failure.
    * @param {Function} fn A function to run before PgormModel.create(..) operation
@@ -513,227 +770,6 @@ class PgormModel {
         );
       }
     })();
-  }
-
-  /**
-   * Gets all the results in the model
-   * @param {Object} options Options to configure the query
-   * @returns Array of results or an empty array
-   * @example
-   * const users = await Users.findAll();
-   */
-  async findAll(options) {
-    const { rows } = await PgormModel.#CLIENT.query(
-      `${this.#selectQuery} ${this.#checkForDeletion('WHERE')}`
-    );
-    return rows;
-  }
-
-  /**
-   * Gets all the results in the model, matching whereClause
-   * @param {String} whereClause SQL query starting with 'WHERE'
-   * @param {Array} paramsArray Array of values for the query placeholders
-   * @returns Array of results or an emtpy array
-   * @example
-   * const users = await Users.findAllWhere('WHERE age>=$1', [20]);
-   */
-  async findAllWhere(whereClause, paramsArray) {
-    verifyParamType(whereClause, 'string', 'whereClause', 'findAllWhere');
-    verifyParamType(paramsArray, 'object', 'paramsArray', 'findAllWhere');
-
-    const { rows } = await PgormModel.#CLIENT.query(
-      `${this.#selectQuery} ${whereClause} ${this.#checkForDeletion()}`,
-      paramsArray
-    );
-    return rows;
-  }
-
-  /**
-   * Gets the one matching result
-   * @param {String} column Name of the column to search
-   * @param {String} value Value for the column to match
-   * @returns Object or null
-   * @example
-   * const user = await Users.findOne('fullname', 'Ali Hassan');
-   */
-  async findOne(column, value) {
-    verifyParamType(column, 'string', 'column', 'findOne');
-    // check if column is in this.columns;
-    if (!this.columns[column]) {
-      throw new PgormError('Invalid column name', 'findOne');
-    }
-
-    const { rows } = await PgormModel.#CLIENT.query(
-      `${this.#selectQuery} where ${column}=$1 ${this.#checkForDeletion()}`,
-      [value]
-    );
-    return rows[0] || null;
-  }
-
-  /**
-   * Gets the result from the model against the given id.
-   * Return null if no result found.
-   * @param {Number} id Id of the result
-   * @returns Object or null
-   * @example
-   * const user = await Users.findById(12);
-   */
-  async findById(id) {
-    verifyParamType(id, 'number', 'id', 'findById');
-
-    const { rows } = await PgormModel.#CLIENT.query(
-      `${this.#selectQuery} where ${
-        this.#pkName
-      }=$1 ${this.#checkForDeletion()}`,
-      [id]
-    );
-    return rows[0] || null;
-  }
-
-  /**
-   * Updates the record by given id
-   * @param {Number} id Id of the record to be updated
-   * @param {Object} values New values for the record
-   * @returns Updated record or null
-   * @example
-   * const updatedUser = await Users.updateById(12,{fullname: 'Ali Hussain', age: 23});
-   *
-   * if(updatedUsers){
-   *    // user updated do something with updatedUser...
-   * } else {
-   *    // user not found with that id...
-   * }
-   */
-  async updateById(id, values) {
-    verifyParamType(id, 'number', 'id', 'updateById');
-
-    this.#validate(values);
-    await this.#validateBeforeUpdate?.(PgormModel.#CLIENT, values);
-
-    const len = this.#columnsLen;
-    const arrangedValues = this.#arrangeByColumns(values);
-
-    let columns = `${this.#updateCols}`;
-    let updateValues = arrangedValues;
-
-    // if timestamps are enabled, update value for updatedAt col
-    if (this.#useTimestamps) {
-      columns += `,${PgormModel.#timestamps.updatedAt}=$${len + 1}`;
-      updateValues = [...arrangedValues, getTimestamp()];
-    }
-
-    const updateQuery = `UPDATE ${this.tableName} 
-        set ${columns}
-        where ${this.#pkName}=$${len + 2} RETURNING *`;
-
-    const { rows } = await PgormModel.#CLIENT.query(updateQuery, [
-      ...updateValues,
-      id,
-    ]);
-
-    return rows[0] || null;
-  }
-
-  /**
-   * Creates new record
-   * @param {Object} values Values for the new record
-   * @returns Created record or null
-   * @example
-   * const user = await Users.create({fullname: 'Huzaifa Tayyab', age: 23});
-   */
-  async create(values) {
-    verifyParamType(values, 'object', 'values', 'create');
-
-    this.#validate(values); // run user input validations
-    await this.#validateBeforeCreate?.(PgormModel.#CLIENT, values); // run record validations
-
-    const len = this.#columnsLen;
-    const arrangedValues = this.#arrangeByColumns(values);
-    const timestamp = getTimestamp();
-    const timestampsCols = Object.values(PgormModel.#timestamps);
-    const columns = Object.keys(this.columns);
-
-    // placeholders for timestamp cols i.e. $(len+1), $(len+2);
-    // i is 0 based so added one in it
-    const timestampPlaceholders = timestampsCols
-      .map((_, i) => '$' + (len + i + 1))
-      .join();
-
-    let insertColumns = columns.join();
-    let insertPlaceholders = this.#columnsPlaceholders;
-    let insertValues = arrangedValues;
-
-    // if timestamps are enables, append timestamps config in query
-    if (this.#useTimestamps) {
-      // alphabatically sorted timestamps col names [createdAt,deletedAt,updatedAt]
-      insertColumns += `,${timestampsCols.sort().join()}`;
-      insertPlaceholders += `,${timestampPlaceholders}`;
-
-      // concating timetamps values in arr
-      insertValues = [
-        ...insertValues,
-        timestamp, // createdAt
-        null, // deletedAt
-        timestamp, // updatedAt
-      ];
-    }
-
-    const insertQuery = `INSERT INTO ${this.tableName} (${insertColumns}) VALUES (${insertPlaceholders}) RETURNING *`;
-    const { rows } = await PgormModel.#CLIENT.query(insertQuery, insertValues);
-
-    return rows[0] || null;
-  }
-
-  /**
-   * Deletes the record by given id
-   * @param {Number} id Id of the record to be deleted
-   * @returns boolean
-   * @example
-   * const isUserDeleted = await Users.deleteById(12);
-   *
-   * if(isUserDeleted){
-   *    // deleted
-   * } else {
-   *    // user not found with that id
-   * }
-   */
-  async deleteById(id) {
-    verifyParamType(id, 'number', 'id', 'deleteById');
-
-    // run record validation hook, if provided
-    await this.#validateBeforeDestroy?.(PgormModel.#CLIENT, id);
-
-    // if record not found with id return false
-    const record = await this.findById(id);
-    if (!record) {
-      return false;
-    }
-
-    // if paranoid, do soft delete, put deleted=true
-    if (this.#paranoidTable) {
-      // throw error if timestamps are not enabled
-      if (!this.#useTimestamps) {
-        throw new PgormError(
-          'modalOptions.timestamps need to be enabled for modalOptions.paranoid to work.',
-          'deleteById'
-        );
-      }
-      await PgormModel.#CLIENT.query(
-        `UPDATE ${this.tableName} SET ${
-          PgormModel.#timestamps.deletedAt
-        }=$1 WHERE ${this.#pkName}=$2`,
-        [getTimestamp(), id]
-      );
-
-      return true;
-    } else {
-      // else do hard delete
-      await PgormModel.#CLIENT.query(
-        `DELETE FROM ${this.tableName} WHERE ${this.#pkName}=$1`,
-        [id]
-      );
-      return true;
-    }
   }
 }
 
