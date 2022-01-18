@@ -82,7 +82,7 @@ npm install --save pg-models
 <a name="new_PgormModel_new"></a>
 
 ### new PgormModel(modalName, options)
-Creates new modal and relevant table
+Creates new modal
 
 
 | Param | Type | Description |
@@ -104,7 +104,7 @@ gets or sets the table name (with prefix)
 **Kind**: instance property of [<code>PgormModel</code>](#PgormModel)  
 <a name="PgormModel+define"></a>
 
-### pgormModel.define(columns, options)
+### pgormModel.define(columns)
 Creates new table for the model with given configurations. Alters the table if already exists according to the given configurations.
 
 **Kind**: instance method of [<code>PgormModel</code>](#PgormModel)  
@@ -112,7 +112,6 @@ Creates new table for the model with given configurations. Alters the table if a
 | Param | Type | Description |
 | --- | --- | --- |
 | columns | [<code>columnsObj</code>](#columnsObj) | Table columns with configurations |
-| options | <code>object</code> | Options to modify the behaviour of PgormModel |
 
 **Example**  
 ```js
