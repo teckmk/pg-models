@@ -78,12 +78,16 @@ const columnsObj = {
 // end types
 
 /**
- * @summary
- * Installation: npm install pg-models
  * @example
  * const PgormModel = require('pg-models');
  *
  * const Users = new PgormModel('users');
+ *
+ * // or with options
+ * const Users = new PgormModel('users', {
+ *   tableName: 'users_table',
+ *   timestamps: true,
+ * });
  */
 class PgormModel {
   // private fields
@@ -254,9 +258,112 @@ class PgormModel {
   }
 
   /**
+   * Creates new function on the model, that can be accessed by the model instance.
+   * i.e `MyModel.customQueries.myCustomQueryMethod(..)`
+   * @param {String} methodName The name for the function
+   * @param {Function} fn A callback which returns a query function to attach to the model,
+   * @example
+   * Users.addQueryMethod('getByQualification', (client)=>{
+   *   // here you define and return your query function
+   *   return async (qual_id) => {
+   *     // const { rows: usersByQual } = await client.query(..)
+   *     // return usersByQual
+   *   }
+   * });
+   *
+   * // and use it like this:
+   * await Users.customQueries.getByQualification(1)
+   */
+  addQueryMethod(methodName, fn) {
+    verifyParamType(methodName, 'string', 'methodName', 'addQueryMethod');
+    verifyParamType(fn, 'function', 'fn', 'addQueryMethod');
+
+    this.customQueries[methodName] = fn(PgormModel.#CLIENT);
+  }
+
+  /**
+   * Creates a foreign key. fkName must be present in the model
+   * Throws error if the foreign key already exists or column is not defined in the model.
+   * @param {String} fkName Name of the foreign key
+   * @param {String} parentTableName The name of the parent table to which key is being linked
+   * @example
+   * const Books = new PgormModel('books', {
+   *   title: {
+   *      schema: 'title VARCHAR(255)',
+   *   },
+   *   user_id: {
+   *      schema: 'user_id INT',
+   *   },
+   * });
+   *
+   * // create a foreign key on user_id column
+   * Books.addForeignKey('user_id', Users.tableName);
+   */
+  addForeignKey(fkName, parentTableName) {
+    verifyParamType(fkName, 'string', 'fkName', 'addForeignKey');
+    verifyParamType(
+      parentTableName,
+      'string',
+      'parentTableName',
+      'addForeignKey'
+    );
+
+    const thisMethodName = 'addForeignKey';
+    const contraintName = `${this.tableName}_${fkName}_fkey`;
+
+    (async () => {
+      try {
+        // check if fkName column exists in this table
+        const { rows: columns } = await PgormModel.#CLIENT.query(
+          `SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema='${this.#tableSchema}' 
+            AND table_name='${this.#tableName}' 
+            AND column_name='${fkName}'
+          );`
+        );
+
+        // if foreign key column is not found, throw err
+        if (!columns[0].exists) {
+          throw new PgormError(
+            `column ${fkName} does not exist in ${
+              this.#tableName
+            }, in addForeignKey`,
+            thisMethodName
+          );
+        }
+
+        // check if constraint exists already
+        const { rows: constraints } = await PgormModel.#CLIENT.query(
+          `SELECT EXISTS (SELECT 1 
+      FROM information_schema.table_constraints 
+      WHERE table_schema='${this.#tableSchema}' AND table_name='${
+            this.tableName
+          }' AND constraint_name='${contraintName}');`
+        );
+
+        // if foreign key doesnt exist already
+        if (!constraints[0].exists) {
+          // reference foreign key
+          await PgormModel.#CLIENT.query(
+            `ALTER TABLE ${this.tableName}
+        ADD CONSTRAINT ${contraintName}
+        FOREIGN KEY (${fkName})
+        REFERENCES "${parentTableName}" (${this.#pkName});`
+          );
+        }
+      } catch (err) {
+        throw new PgormError(
+          `Unable to create foreign key ${contraintName}: ${err.message}`,
+          thisMethodName
+        );
+      }
+    })();
+  }
+
+  /**
    * Creates new table for the model with given configurations. Alters the table if already exists according to the given configurations.
    * @param {columnsObj} columns Table columns with configurations
-   * @param {object} options Options to modify the behaviour of PgormModel
    * @example
    * Users.define({
    *   fullname: {
@@ -409,6 +516,51 @@ class PgormModel {
           'define'
         );
       });
+  }
+
+  /**
+   * Registers a validator hook, which is called before every 'create' operation on this model.
+   * Validator function must throw error on validation failure.
+   * @param {Function} fn A function to run before PgormModel.create(..) operation
+   * @example
+   * Users.beforeCreate(async (client, values)=>{
+   *   // await client.query(..)
+   *   // throws error on validation failure
+   * })
+   */
+  beforeCreate(fn) {
+    verifyParamType(fn, 'function', 'fn', 'beforeCreate');
+    this.#validateBeforeCreate = fn;
+  }
+
+  /**
+   * Registers a validator hook, which is called before every 'update' operation on this model.
+   * Validator function must throw error on validation failure.
+   * @param {Function} fn A function to run before PgormModel.update(..) operation
+   * @example
+   * Users.beforeUpdate(async (client, recordId)=>{
+   *   // await client.query(..)
+   *   // throws error on validation failure
+   * })
+   */
+  beforeUpdate(fn) {
+    verifyParamType(fn, 'function', 'fn', 'beforeUpdate');
+    this.#validateBeforeUpdate = fn;
+  }
+
+  /**
+   * Registers a validator hook, which is called before every 'delete' operation on this model.
+   * Validator function must throw error on validation failure.
+   * @param {Function} fn A function to run before PgormModel.destory(..) operation
+   * @example
+   * Users.beforeDestroy(async (client, recordId)=>{
+   *   // await client.query(..)
+   *   // throws error on validation failure
+   * })
+   */
+  beforeDestroy(fn) {
+    verifyParamType(fn, 'function', 'fn', 'beforeDestroy');
+    this.#validateBeforeDestroy = fn;
   }
 
   /**
@@ -637,155 +789,6 @@ class PgormModel {
       );
       return true;
     }
-  }
-
-  /**
-   * Registers a validator hook, which is called before every 'create' operation on this model.
-   * Validator function must throw error on validation failure.
-   * @param {Function} fn A function to run before PgormModel.create(..) operation
-   * @example
-   * Users.beforeCreate(async (client, values)=>{
-   *   // await client.query(..)
-   *   // throws error on validation failure
-   * })
-   */
-  beforeCreate(fn) {
-    verifyParamType(fn, 'function', 'fn', 'beforeCreate');
-    this.#validateBeforeCreate = fn;
-  }
-
-  /**
-   * Registers a validator hook, which is called before every 'update' operation on this model.
-   * Validator function must throw error on validation failure.
-   * @param {Function} fn A function to run before PgormModel.update(..) operation
-   * @example
-   * Users.beforeUpdate(async (client, recordId)=>{
-   *   // await client.query(..)
-   *   // throws error on validation failure
-   * })
-   */
-  beforeUpdate(fn) {
-    verifyParamType(fn, 'function', 'fn', 'beforeUpdate');
-    this.#validateBeforeUpdate = fn;
-  }
-
-  /**
-   * Registers a validator hook, which is called before every 'delete' operation on this model.
-   * Validator function must throw error on validation failure.
-   * @param {Function} fn A function to run before PgormModel.destory(..) operation
-   * @example
-   * Users.beforeDestroy(async (client, recordId)=>{
-   *   // await client.query(..)
-   *   // throws error on validation failure
-   * })
-   */
-  beforeDestroy(fn) {
-    verifyParamType(fn, 'function', 'fn', 'beforeDestroy');
-    this.#validateBeforeDestroy = fn;
-  }
-
-  /**
-   * Creates new function on the model, that can be accessed by the model instance.
-   * i.e `MyModel.customQueries.myCustomQueryMethod(..)`
-   * @param {String} methodName The name for the function
-   * @param {Function} fn A callback which returns a query function to attach to the model,
-   * @example
-   * Users.addQueryMethod('getByQualification', (client)=>{
-   *   // here you define and return your query function
-   *   return async (qual_id) => {
-   *     // const { rows: usersByQual } = await client.query(..)
-   *     // return usersByQual
-   *   }
-   * });
-   *
-   * // in users controller
-   * await Users.customQueries.getByQualification(1)
-   */
-  addQueryMethod(methodName, fn) {
-    verifyParamType(methodName, 'string', 'methodName', 'addQueryMethod');
-    verifyParamType(fn, 'function', 'fn', 'addQueryMethod');
-
-    this.customQueries[methodName] = fn(PgormModel.#CLIENT);
-  }
-
-  /**
-   * Creates a foreign key. fkName must be present in the model
-   * Throws error if the foreign key already exists or column is not defined in the model.
-   * @param {String} fkName Name of the foreign key
-   * @param {String} parentTableName The name of the parent table to which key is being linked
-   * @example
-   * const Books = new PgormModel('books', {
-   *   title: {
-   *      schema: 'title VARCHAR(255)',
-   *   },
-   *   user_id: {
-   *      schema: 'user_id INT',
-   *   },
-   * });
-   *
-   * // create a foreign key on user_id column
-   * Books.addForeignKey('user_id', Users.tableName);
-   */
-  addForeignKey(fkName, parentTableName) {
-    verifyParamType(fkName, 'string', 'fkName', 'addForeignKey');
-    verifyParamType(
-      parentTableName,
-      'string',
-      'parentTableName',
-      'addForeignKey'
-    );
-
-    const thisMethodName = 'addForeignKey';
-    const contraintName = `${this.tableName}_${fkName}_fkey`;
-
-    (async () => {
-      try {
-        // check if fkName column exists in this table
-        const { rows: columns } = await PgormModel.#CLIENT.query(
-          `SELECT EXISTS (
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_schema='${this.#tableSchema}' 
-            AND table_name='${this.#tableName}' 
-            AND column_name='${fkName}'
-          );`
-        );
-
-        // if foreign key column is not found, throw err
-        if (!columns[0].exists) {
-          throw new PgormError(
-            `column ${fkName} does not exist in ${
-              this.#tableName
-            }, in addForeignKey`,
-            thisMethodName
-          );
-        }
-
-        // check if constraint exists already
-        const { rows: constraints } = await PgormModel.#CLIENT.query(
-          `SELECT EXISTS (SELECT 1 
-      FROM information_schema.table_constraints 
-      WHERE table_schema='${this.#tableSchema}' AND table_name='${
-            this.tableName
-          }' AND constraint_name='${contraintName}');`
-        );
-
-        // if foreign key doesnt exist already
-        if (!constraints[0].exists) {
-          // reference foreign key
-          await PgormModel.#CLIENT.query(
-            `ALTER TABLE ${this.tableName}
-        ADD CONSTRAINT ${contraintName}
-        FOREIGN KEY (${fkName})
-        REFERENCES "${parentTableName}" (${this.#pkName});`
-          );
-        }
-      } catch (err) {
-        throw new PgormError(
-          `Unable to create foreign key ${contraintName}: ${err.message}`,
-          thisMethodName
-        );
-      }
-    })();
   }
 }
 
